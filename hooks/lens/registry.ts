@@ -171,10 +171,22 @@ export const touches = (path: string, registry: Registry, place?: string): boole
 export const relevant = (regs: Registries): [string, Registries['files'][string]][] =>
   Object.entries(regs.files).filter(([, f]) => isActive(f.registry) && touches(f.path, f.registry, regs.place))
 
-// The registry the views draw: the ticket on view, else the run here written last.
+// Ticket keys in a text, in order, once each: "PROJ-123".
+export const keysIn = (text: string): string[] => [...new Set(text.match(/\b[A-Z][A-Z0-9]+-\d+\b/gu) ?? [])]
+
+// The one run a text names: the single key in it that has a state file. None, or more than one, names none.
+export const namedRun = (regs: Registries, text: string): string | undefined => {
+  const known = keysIn(text).filter(k => regs.files[k])
+  return known.length === 1 ? known[0] : undefined
+}
+
+// The registry the views draw: the ticket this session works on (the one it named or reported), else the ticket in
+// the branch's name, else the run here written last.
 export const current = (regs: Registries, ticket?: string): { key: string; registry: Registry } | undefined => {
   const own = ticket ? regs.files[ticket] : undefined
   if (ticket && own) return { key: ticket, registry: own.registry }
+  const fromBranch = regs.branch ? keysIn(regs.branch).find(k => regs.files[k]) : undefined
+  if (fromBranch) return { key: fromBranch, registry: regs.files[fromBranch]!.registry }
   const [found] = relevant(regs)
     .sort(([, a], [, b]) => b.mtimeMs - a.mtimeMs)
   return found && { key: found[0], registry: found[1].registry }

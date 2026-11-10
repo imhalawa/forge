@@ -5,7 +5,7 @@ import type { ForgeReport, LensState, Registries } from '../types'
 import { card } from './lens/card'
 import { pane, PANE } from './lens/pane'
 import {
-  changed, current, discover, type Io, NO_REGISTRIES, POLL_MS, relevant, scan, transitions,
+  changed, current, discover, type Io, namedRun, NO_REGISTRIES, POLL_MS, relevant, scan, transitions,
 } from './lens/registry'
 import { accepts, apply, clean, EMPTY, KINDS, STATES } from './lens/state'
 import { complete, TEMPLATES } from './lens/templates'
@@ -165,6 +165,21 @@ export const register: Register = on => {
       void ask().catch(() => undefined)
       const asking = $.clock.every(SIGNAL_MS, () => { void ask().catch(() => undefined) })
       stopWatch = () => { timer.cancel(); asking.cancel() }
+    }
+    return next(e)
+  })
+
+  // The session's ticket, from what the person types: `/forge PROJ-123`, or a message that names one run. The pane
+  // follows it at once, before any report, so it never shows another ticket's run.
+  on('prompt.submit', async ($, e, next) => {
+    const text = (e as { text?: string }).text ?? ''
+    const key = namedRun(await read($, registries), text)
+    if (key) {
+      const before = await read($, lens)
+      if (before.ticket !== key) {
+        await update($, lens, state => (state.ticket === key ? state : { ...EMPTY, ticket: key }))
+        $.ui.invalidate('ui.render')
+      }
     }
     return next(e)
   })

@@ -4,6 +4,7 @@ import type { Registries, Registry } from '../../types'
 import { REGISTRY } from './fixtures'
 import { githubRepo, prUrl, ticketUrl } from './links'
 import {
+  keysIn, namedRun,
   current, type Io, isActive, NO_REGISTRIES, nameOf, parseRegistry, relevant, scan, transitions,
 } from './registry'
 
@@ -158,4 +159,25 @@ test('a PR link and a ticket link', () => {
   expect(ticketUrl('https://example.atlassian.net/', 'PROJ-2')).toBe('https://example.atlassian.net/browse/PROJ-2')
   expect(ticketUrl(undefined, 'PROJ-2')).toBeNull()
   expect(ticketUrl('javascript:alert(1)', 'PROJ-2')).toBeNull()
+})
+
+const two = (branch?: string): Registries => ({
+  dirs: ['/home/me/.claude/forge'], place: '/w', branch,
+  files: {
+    'PROJ-1': { path: '/home/me/.claude/forge/PROJ-1.json', mtimeMs: 1, registry: REGISTRY },
+    'PROJ-2': { path: '/home/me/.claude/forge/PROJ-2.json', mtimeMs: 2, registry: REGISTRY },
+  },
+})
+
+test('the pane follows the branch\'s ticket before the run written last', () => {
+  expect(current(two('PROJ-1-retry-refund'))?.key).toBe('PROJ-1')
+  expect(current(two('main'))?.key).not.toBe('PROJ-1')
+  expect(current(two('PROJ-1-retry-refund'), 'PROJ-2')?.key).toBe('PROJ-2')
+})
+
+test('a text names a run only when exactly one key in it has a state file', () => {
+  expect(keysIn('/forge PROJ-1 and PROJ-1 again, PROJ-22')).toEqual(['PROJ-1', 'PROJ-22'])
+  expect(namedRun(two(), '/forge PROJ-1')).toBe('PROJ-1')
+  expect(namedRun(two(), 'compare PROJ-1 with PROJ-2')).toBeUndefined()
+  expect(namedRun(two(), 'PROJ-9 is new')).toBeUndefined()
 })

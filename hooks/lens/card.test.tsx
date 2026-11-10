@@ -243,3 +243,11 @@ test('forge_report takes a template with right blanks, and refuses wrong ones by
   expect(bad.isError).toBe(true)
   expect(bad.result).toContain('n is missing')
 })
+
+test('the prompt hook passes every prompt on unchanged', async ($, on) => {
+  quiet(on)
+  ;(on as (event: string, hook: (...a: any[]) => unknown) => void)('prompt.submit', (_$: unknown, e: { text: string }) => ({ text: e.text }))
+  for (const text of ['/forge PROJ-123', 'compare PROJ-1 with PROJ-2', 'hello']) {
+    expect(await $.prompt.submit({ text } as never)).toMatchObject({ text })
+  }
+})
