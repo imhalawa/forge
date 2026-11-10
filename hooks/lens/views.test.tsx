@@ -5,7 +5,7 @@ import { conductor, lane, laneOf, REGISTRY, SCENARIOS } from './fixtures'
 import { pane } from './pane'
 import { apply, EMPTY } from './state'
 import { ciOf, parseSignal, type Signal, waitingOn } from './signals'
-import { editorCommand } from './tracker'
+import { breakable, editorCommand, splitPrefix } from './tracker'
 import { tree, type View } from './tree'
 
 // A table of plain-data elements, so a view's tree can be read without a surface.
@@ -228,28 +228,19 @@ const withLane = (id: string, state: string, extra: Record<string, unknown> = {}
   ({ ...VIEW, registry: { ...REGISTRY, lanes: REGISTRY.lanes.map(l => (l.id === id ? { ...l, state, ...extra } : l)) } })
 const links = (v: unknown) => find(v, n => n.type === 'Link').map(n => n.props.href)
 
-test('the tracker is the five steps: Plan, Implement, Deploy, Verify, Clean up', () =>
+test('the tracker is the five steps, folded but for the one in progress', () =>
   expect(lines(pane(EMPTY, uiTerminal, VIEW))).toEqual([
     '▮ PROJ-1 Retire the old card readers',
-    '├─ ☰ Plan',
-    '│ ├─ ✓ Investigate',
-    '│ └─ ✓ Break down',
-    '├─ ‹› Implement 1 of 3 merged',
-    '│ ├─ ◐ PROJ-2 Remove config',
-    '│ │ ├─ ⊕ #41 Remove the config',
-    '│ │ └─ ○ Remove the config docs',
-    '│ └─ ◐ PROJ-3 Remove scope',
-    '│   └─ ◐ Wt 2',
-    '├─ ⇪ Deploy 0 of 2 live',
-    '│ ├─ ○ PROJ-2 Remove config T○ A○ P○',
-    '│ └─ ○ PROJ-3 Remove scope T○ A○ P○',
-    '├─ ⛉ Verify',
-    '└─ ⌫ Clean up',
-    '  ├─ ○ Worktrees removed 0 of 2 sub-tasks',
-    '  ├─ ○ Local and remote branches deleted 0 of 2 sub-tasks',
-    '  ├─ ○ Stale refs pruned',
-    '  ├─ ○ Sessions archived 0 of 2 sub-tasks',
-    '  └─ ○ Sub-tasks closed 0 of 2 sub-tasks',
+    '✓ Plan · 2 sub-tasks',
+    '◐ Implement · 1 of 3 merged',
+    '├─ ◐ PROJ-2 Remove config',
+    '│ ├─ ⊕ #41 Remove the config',
+    '│ └─ ○ Remove the config docs',
+    '└─ ◐ PROJ-3 Remove scope',
+    '  └─ ◐ Wt 2',
+    '○ Deploy · 0 of 2 live',
+    '○ Verify',
+    '○ Clean up',
   ]))
 
 test('Deploy counts sub-tasks by environment; Verify checks each done criterion and asks you for yours', () => {
@@ -262,21 +253,22 @@ test('Deploy counts sub-tasks by environment; Verify checks each done criterion 
     deploy: { 'PROJ-2': { testing: 'done', acceptance: 'done', production: 'done' }, 'PROJ-3': { testing: 'done', acceptance: 'done', production: 'done' } },
     verify: { 0: 'passed' },
   } as never
-  const l = lines(pane(EMPTY, uiTerminal, { ...VIEW, registry }))
-  expect(l).toContain('├─ ⇪ Deploy')
-  expect(l).toContain('│ ├─ ✓ PROJ-2 Remove config T✓ A✓ P✓')
-  expect(l).toContain('├─ ⛉ Verify 1 of 2 hold')
-  expect(l).toContain('│ ├─ ✓ No service calls the scope forge · Datadog')
-  expect(l).toContain('│ └─ ! The settings page still loads you')
+  const l = lines(pane(EMPTY, uiTerminal, { ...VIEW, registry }, { folds: { deploy: true, 'deploy:live': true } } as never))
+  expect(l).toContain('✓ Deploy · 2 of 2 live')
+  expect(l).toContain('└─ ✓ 2 sub-tasks live in production')
+  expect(l).toContain('  ├─ ✓ PROJ-2 Remove config T✓ A✓ P✓')
+  expect(l).toContain('! Verify · 1 needs you')
+  expect(l).toContain('├─ ✓ No service calls the scope Forge checks it in Datadog')
+  expect(l).toContain('└─ ! The settings page still loads Yours to check')
 })
 
 test('a PR without a name reads its branch in words', () =>
-  expect(lines(pane(EMPTY, uiTerminal, VIEW))).toContain('│   └─ ◐ Wt 2'))
+  expect(lines(pane(EMPTY, uiTerminal, VIEW))).toContain('  └─ ◐ Wt 2'))
 
 test('a change waiting on your review says what to do, in amber, with a review link', () => {
   const tree = pane(EMPTY, uiTerminal, withLane('wt-2', 'review', { worktree: '/r/.worktrees/PROJ-1-wt-2' }))
-  expect(lines(tree)).toContain('│ └─ ! PROJ-3 Remove scope')
-  expect(lines(tree)).toContain('│   └─ ◉ Review and stage the change')
+  expect(lines(tree)).toContain('└─ ! PROJ-3 Remove scope')
+  expect(lines(tree)).toContain('  └─ ◉ Review and stage the change')
   const review = find(tree, n => n.type === 'Button' && n.props.label === 'Review in the editor')
   expect(review).toHaveLength(1)
   const amber = find(tree, n => n.type === 'Text' && n.props.color === 'warning').map(n => text(n))
@@ -289,8 +281,6 @@ test('the ticket, the sub-tasks and the PR numbers are links', () =>
     'https://example.atlassian.net/browse/PROJ-2',
     'https://github.com/o/r/pull/41',
     'https://example.atlassian.net/browse/PROJ-3',
-    'https://example.atlassian.net/browse/PROJ-2',
-    'https://example.atlassian.net/browse/PROJ-3',
   ]))
 
 test('nothing but the tree: no call box, no branches, no codes', () => {
@@ -301,15 +291,16 @@ test('nothing but the tree: no call box, no branches, no codes', () => {
 test('a waiting PR is dim, a dropped one is gone', () => {
   const registry = { ...REGISTRY, lanes: [...REGISTRY.lanes, laneOf('wt-3', 'S1·2', 'PROJ-2', 'pending', { dependsOn: ['wt-2'] })] }
   const tree = pane(EMPTY, uiTerminal, { ...VIEW, registry })
-  expect(lines(tree)).toContain('│ │ └─ ◷ Remove the config docs')
-  expect(lines(pane(EMPTY, uiTerminal, withLane('wt-2', 'dropped')))).not.toContain('│   └─ ◐ Wt 2')
+  expect(lines(tree)).toContain('│ └─ ◷ Remove the config docs')
+  expect(lines(pane(EMPTY, uiTerminal, withLane('wt-2', 'dropped')))).not.toContain('  └─ ◐ Wt 2')
 })
 
 test('once everything merged, Implement is done and its count is gone', () => {
   const registry = { ...REGISTRY, plan: { ...REGISTRY.plan!, prs: REGISTRY.plan!.prs.slice(0, 1) }, lanes: REGISTRY.lanes.slice(0, 1) }
   const l = lines(pane(EMPTY, uiTerminal, { ...VIEW, registry }))
-  expect(l).toContain('├─ ‹› Implement')
-  expect(l).toContain('├─ ⇪ Deploy 0 of 1 live')
+  expect(l).toContain('✓ Implement · 1 of 1 merged')
+  expect(l).toContain('◐ Deploy · 0 of 1 live')
+  expect(l).toContain('└─ ○ PROJ-2 Remove config T○ A○ P○')
 })
 
 test('a PR row carries on-my-watch signals: whose move, checks, reviewers, size', () => {
@@ -440,7 +431,7 @@ test('a building change gets a lower section: every rule in full, ticked off as 
   const plan = { ...REGISTRY.plan!, prs: REGISTRY.plan!.prs.map((r, i) => (i === 0 ? { ...r, name: 'quantity rule', rules: ['When a, then b.', 'When c, then d.', 'When e, then f.'] } : r)) }
   const lanes = REGISTRY.lanes.map((l, i) => (i === 0 ? { ...l, state: 'building', rules: { done: [0], now: 1 } } : l))
   const l = lines(pane(EMPTY, uiTerminal, { ...VIEW, registry: { ...REGISTRY, plan, lanes } }))
-  const at = l.indexOf('‹› Building the quantity rule 1 of 3')
+  const at = l.indexOf('‹› Building the quantity rule · 1 of 3')
   expect(at).toBeGreaterThan(0)
   expect(l.slice(at + 1, at + 4)).toEqual(['✓ When a, then b.', '◐ When c, then d.', '○ When e, then f.'])
 })
@@ -482,15 +473,30 @@ test('an old call card stops asking once the registry moves past it', () => {
 
 test('a criterion written as by "user" is the person\'s, like "you"', () => {
   const plan = { ...REGISTRY.plan!, done: [{ criterion: 'The stacks are empty', by: 'user', source: 'AWS', how: 'look' }] } as never
-  const l = lines(pane(EMPTY, uiTerminal, { ...VIEW, registry: { ...REGISTRY, plan } })).join('\n')
-  expect(l).toContain('The stacks are empty you')
-  expect(l).not.toContain('forge · AWS')
+  const l = lines(pane(EMPTY, uiTerminal, { ...VIEW, registry: { ...REGISTRY, plan } }, { folds: { verify: true } } as never)).join('\n')
+  expect(l).toContain('The stacks are empty Yours to check')
+  expect(l).not.toContain('Forge checks it in AWS')
 })
 
-test('a long label goes under the title; a short one stays at the right and never shrinks', () => {
-  const plan = { ...REGISTRY.plan!, tasks: [{ key: 'PROJ-9', title: 'Archive the pipeline', status: 'open' }] }
-  const tree = pane(EMPTY, ui, { ...VIEW, registry: { ...REGISTRY, plan } }) as unknown as { props: Record<string, unknown> }
-  const rights = JSON.stringify(tree).match(/"key":"right:[^"]+","flexShrink":0/g) ?? []
-  expect(rights.length).toBeGreaterThan(0)
-  expect(JSON.stringify(tree)).not.toContain('"key":"right:PROJ-9"')
+test('nothing sits in a column at the right: every label is inline or under the title', () => {
+  const plan = { ...REGISTRY.plan!, tasks: [{ key: 'PROJ-9', title: '[infra] Archive the pipeline', status: 'open' }] }
+  const tree = pane(EMPTY, ui, { ...VIEW, registry: { ...REGISTRY, plan } })
+  expect(JSON.stringify(tree)).not.toContain('"key":"right:')
+  const l = lines(pane(EMPTY, uiTerminal, { ...VIEW, registry: { ...REGISTRY, plan } })).join('\n')
+  expect(l).toContain('PROJ-9 Archive the pipeline infra · No pull request')
+})
+
+test('a title\'s [prefix] moves under it, and long words get break points on the desktop', () => {
+  expect(splitPrefix('[aws-infra] Remove the stack folders')).toEqual({ prefix: 'aws-infra', rest: 'Remove the stack folders' })
+  expect(splitPrefix('No prefix here')).toEqual({ rest: 'No prefix here' })
+  expect(breakable('short-word')).toBe('short-word')
+  expect(breakable('hosting-and-deployment-reviewers')).toBe('hosting-\u200Band-\u200Bdeployment-\u200Breviewers')
+  expect(breakable('PinTerminalsSrvIamRoleArn')).toBe('Pin\u200BTerminals\u200BSrv\u200BIam\u200BRole\u200BArn')
+})
+
+test('a step opens and folds on the person\'s toggle', () => {
+  const closed = lines(pane(EMPTY, uiTerminal, VIEW, { folds: { implement: false } } as never))
+  expect(closed).not.toContain('├─ ◐ PROJ-2 Remove config')
+  const opened = lines(pane(EMPTY, uiTerminal, VIEW, { folds: { plan: true } } as never))
+  expect(opened).toContain('├─ ✓ Investigate')
 })

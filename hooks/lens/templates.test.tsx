@@ -148,14 +148,14 @@ test('review: the rules in full; nothing staged says so', () => {
 test('commit: a tree from the PR to each staged file with its lines', () => {
   const l = lines(card(report('commit'), terminal)).join('\n')
   expect(l).toContain('PROJ-200 Judge eligibility on price × quantity')
-  expect(l).toContain('Eligibility/EligibilityRule.cs  +48 −12')
+  expect(l).toContain('EligibilityRule.cs  +48 −12 Eligibility/')
   expect(l).toContain('└─ ')
 })
 
 test('checks failing: the case in the title, every failure listed, a reason with no location', () => {
   const l = lines(card(report('checks-failing'), terminal))
   expect(l[0]).toBe('✗ Tests fail on the quantity rule')
-  expect(l.join('\n')).toContain('src/EligibilityRuleTests.cs · 35')
+  expect(l.join('\n')).toContain('EligibilityRuleTests.cs · 35 src/')
   expect(l.join('\n')).toContain('Stopped after 30 minutes without a result.')
   expect(drawn('checks-failing', { ...FILLS['checks-failing'], case: 'base', base: 'main', failing: [{ check: 'Lint', failures: [{ reason: 'x' }] }] } as never).title)
     .toBe('Lint fails on main too')
@@ -165,7 +165,7 @@ test('checks failing: the case in the title, every failure listed, a reason with
 test('merged with a conflict lists the files and needs the person', () => {
   const d = drawn('merged', FILLS.merged as never)
   expect(d).toMatchObject({ needsYou: true, title: 'Merged, but the schema change conflicts with main' })
-  expect(lines(card(report('merged'), terminal)).join('\n')).toContain('schema/orders.graphql')
+  expect(lines(card(report('merged'), terminal)).join('\n')).toContain('orders.graphql schema/')
 })
 
 test('deploy failed names where it is live and what will not start', () =>

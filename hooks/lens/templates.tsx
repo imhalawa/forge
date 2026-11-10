@@ -139,7 +139,10 @@ const rowLine = (r: Row, ui: Ui, depth: number, last: boolean, path: string): Re
   const { Box, Text, Link } = ui.t
   const kit = makeKit(ui.t, ui.surface)
   const key = `${path}:${r.key}`
-  const label = r.link && Link ? <Link href={r.link} label={r.text} /> : r.text
+  // A path reads file name first; its folder goes on a muted line under it, breaking only at `/`.
+  const where = r.mono && r.text.includes('/') ? { file: r.text.slice(r.text.lastIndexOf('/') + 1), folder: r.text.slice(0, r.text.lastIndexOf('/') + 1) } : null
+  const shown = where?.file || r.text
+  const label = r.link && Link ? <Link href={r.link} label={shown} /> : shown
   const gutter = depth > 0 && !kit.desktop ? `${'   '.repeat(depth - 1)}${last ? '└─ ' : '├─ '}` : ''
   const me = (
     <Box key={`row:${key}`} flexDirection="row" columnGap={1} alignItems="flex-start" position="relative" overflow="hidden"
@@ -155,6 +158,7 @@ const rowLine = (r: Row, ui: Ui, depth: number, last: boolean, path: string): Re
           {r.plus && <Text color="success">{`  +${r.plus[0]}`}</Text>}
           {r.plus && <Text color="error">{` −${r.plus[1]}`}</Text>}
         </Text>
+        {where && <Text dimColor mono>{kit.desktop ? where.folder.replaceAll('/', '/\u200B') : where.folder}</Text>}
         {r.sub && <Text dimColor>{r.sub}</Text>}
       </Box>
     </Box>

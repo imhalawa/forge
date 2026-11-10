@@ -81,6 +81,8 @@ export const forgeReportSchema = {
 export const lens = atom({ plugin: 'forge', key: 'lens' } as const, EMPTY)
 export const registries = atom({ plugin: 'forge', key: 'registries' } as const, NO_REGISTRIES)
 export const signals = atom({ plugin: 'forge', key: 'signals' } as const, {} as Record<string, Signal>)
+// Which pane rows the person opened or folded, by row key; a row not in it keeps its default.
+export const folds = atom({ plugin: 'forge', key: 'folds' } as const, {} as Record<string, boolean>)
 
 // gh and the system opener live outside the engine's PATH on a Mac.
 const TOOL_PATH = '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin'
@@ -242,6 +244,11 @@ export const register: Register = on => {
       // The review action: the editor's URL through the system opener.
       open: (command: string[]) => $.process.run(command, { env: { PATH: TOOL_PATH } }).catch(() => undefined),
       refresh: () => refreshNow?.(),
+      folds: await read($, folds),
+      toggle: async (key: string, open: boolean) => {
+        await update($, folds, f => ({ ...f, [key]: !open }))
+        $.ui.invalidate('ui.render')
+      },
     })
   })
 

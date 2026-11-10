@@ -87,7 +87,7 @@ export type Registry = {
 export type Environment = 'testing' | 'acceptance' | 'production'
 // A missing piece found after planning: what it is, which step found it, and the sub-tasks that fill it.
 export type Gap = { gap: string; found?: 'implement' | 'deploy' | 'verify'; state: 'planning' | 'planned'; subTasks?: string[] }
-export type StepState = 'pending' | 'running' | 'done' | 'failed' | 'passed'
+export type StepState = 'pending' | 'running' | 'done' | 'failed' | 'passed' | 'waiting' // waiting: merged, and nobody started its deploy
 export type DoneCriterion = { criterion: string; by: 'forge' | 'you'; source?: string; how?: string }
 export type CleanupState = { worktrees?: boolean; branches?: boolean; sessions?: boolean; closed?: boolean }
 
@@ -116,6 +116,6 @@ export type Signal = {
 
 declare module 'claude-code' {
   interface PluginState {
-    forge: { lens: LensState; registries: Registries; signals: Record<string, Signal> }
+    forge: { lens: LensState; registries: Registries; signals: Record<string, Signal>; folds: Record<string, boolean> }
   }
 }

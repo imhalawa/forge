@@ -18,7 +18,8 @@ export const STATE_ICON: Record<State, IconName> = {
   approved: 'done', merged: 'merged', rebased: 'progress', done: 'done', confirmed: 'done',
 }
 
-// One row of the tracker: what it is, the reference that links to it, and the one action it needs.
+// One row of the pane. Every label sits on the title's line as muted text (`count`) or on lines of its own under it
+// (`note`, the PR's `signal`): nothing is drawn in a column at the right, so no width splits a label.
 export type Node = {
   key: string
   icon: IconName
@@ -27,8 +28,10 @@ export type Node = {
   title: string
   tone?: 'you' | 'dim'
   strong?: boolean
-  right?: string                // short: a count or the deploy marks, kept on one line at the right
-  note?: string                 // longer: drawn under the title, so a narrow pane never splits it
+  count?: string                // muted, after the title: "8 of 8 merged"
+  note?: string                 // muted, under the title
+  // A row that folds: its children show only while it is open. `open` is its default, before the person toggles it.
+  fold?: { open: boolean }
   // A row's one action: open its worktree (`target`), or run `press`; `icon` defaults to the editor's.
   action?: { label: string; target?: string[]; press?: () => unknown; icon?: 'open-in-editor' | 'refresh'; always: boolean }
   signal?: Signal
@@ -44,6 +47,18 @@ export const editorCommand = (path: string, editor = 'vscode'): string[] | null 
   const app = APPS[editor]
   return app ? ['open', '-a', app, path] : null
 }
+
+// A title's leading "[Component] " is a label, not the title: it moves to the muted line under it.
+export const splitPrefix = (title: string): { prefix?: string; rest: string } => {
+  const m = /^\s*\[([^\]]+)\]\s*(.+)$/u.exec(title)
+  return m ? { prefix: m[1]!.trim(), rest: m[2]! } : { rest: title }
+}
+
+// Break points a narrow pane can use in long unbroken words (paths, team names, export names): after `/`, `-`, `_`
+// and `.`, and before a capital that follows a small letter. Invisible; words of 16 letters or fewer stay whole.
+const ZWSP = '​'
+export const breakable = (text: string): string =>
+  text.replace(/\S{17,}/gu, word => word.replace(/([/\-_.])/gu, `$1${ZWSP}`).replace(/([a-z])([A-Z])/gu, `$1${ZWSP}$2`))
 
 const WAITING: ReadonlySet<State> = new Set(['pending', 'waits', 'queue'])
 
@@ -67,10 +82,7 @@ const prNode = (n: PrNode, view: View, only: boolean, editor: string, signals: R
   const held = n.state !== 'merged' && (row?.hold || after)
     ? (row?.hold ? `Held: ${row.hold}` : `Merges after ${after?.name ?? row!.mergeAfter!.pr} is in ${row!.mergeAfter!.deployedTo}`) : undefined
   if (held) {
-    return {
-      key: n.pr, icon: 'waiting', ref, title: name, tone: 'dim', note: held,
-      signal: n.url ? signals[n.url] : undefined, children: [],
-    }
+    return { key: n.pr, icon: 'waiting', ref, title: name, tone: 'dim', note: held, signal: n.url ? signals[n.url] : undefined, children: [] }
   }
   return {
     key: n.pr, icon: STATE_ICON[n.state], ref, title: name,
@@ -81,13 +93,21 @@ const prNode = (n: PrNode, view: View, only: boolean, editor: string, signals: R
 }
 
 const ENVS: [Environment, string][] = [['testing', 'T'], ['acceptance', 'A'], ['production', 'P']]
-const STATE_MARK: Record<StepState, string> = { pending: '○', running: '◐', done: '✓', passed: '✓', failed: '✗' }
+const STATE_MARK: Record<StepState, string> = { pending: '○', running: '◐', done: '✓', passed: '✓', failed: '✗', waiting: '○' }
 const stepIcon = (s: StepState | undefined): IconName =>
-  s === 'done' || s === 'passed' ? 'done' : s === 'running' ? 'progress' : s === 'failed' ? 'failed' : 'pending'
+  s === 'done' || s === 'passed' ? 'done' : s === 'running' ? 'progress' : s === 'failed' ? 'failed' : s === 'waiting' ? 'you' : 'pending'
 const count = (n: number, of: number, what: string) => `${n} of ${of} ${what}`
+const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
 
-// The run as its five steps: Plan, Implement, Deploy, Verify, Clean up. Implement holds the sub-tasks and their PRs;
-// Deploy and Clean up count sub-tasks; Verify checks each done criterion.
+// A sub-task's title with its "[repo]" prefix moved under it.
+const titled = (title: string | undefined, note?: string): Pick<Node, 'title' | 'note'> => {
+  const { prefix, rest } = splitPrefix(title ?? '')
+  const notes = [prefix, note].filter(Boolean)
+  return { title: rest, note: notes.length ? notes.join(' · ') : undefined }
+}
+
+// The run as its five steps: Plan, Implement, Deploy, Verify, Clean up. Each step folds; the one in progress opens.
+// Implement holds the sub-tasks and their PRs; Deploy and Clean up count sub-tasks; Verify checks each done criterion.
 export const nodes = (state: LensState, view: View, editor = 'vscode', signals: Record<string, Signal> = {}, refresh?: () => unknown): Node => {
   const reg = view.registry
   const subs = tree(view, state)
@@ -104,8 +124,8 @@ export const nodes = (state: LensState, view: View, editor = 'vscode', signals: 
     if (s.manual) {
       const finished = manualDone(s)
       return {
-        key: s.key, icon: finished ? 'done' : 'pending', ref: { text: s.key, href: s.url }, title: s.title ?? '',
-        tone: finished ? undefined : 'dim', note: 'No pull request', children: [],
+        key: s.key, icon: finished ? 'done' : 'pending', ref: { text: s.key, href: s.url }, ...titled(s.title, 'No pull request'),
+        tone: finished ? undefined : 'dim', children: [],
       }
     }
     const live = s.prs.filter(n => !n.dropped)
@@ -113,35 +133,54 @@ export const nodes = (state: LensState, view: View, editor = 'vscode', signals: 
     const done = live.length > 0 && live.every(n => n.state === 'merged')
     return {
       key: s.key, icon: needs ? 'you' : done ? 'done' : live.some(n => n.lane) ? 'progress' : 'pending',
-      ref: { text: s.key, href: s.url }, title: s.title ?? '', tone: needs ? 'you' : undefined,
+      ref: { text: s.key, href: s.url }, ...titled(s.title), tone: needs ? 'you' : undefined,
       children: live.map(n => prNode(n, view, live.length === 1, editor, signals)),
     }
   })
 
-  // Deploy: a sub-task is in an environment once every one of its PRs is deployed there.
-  const deployRows: Node[] = coded.map(s => {
+  // Deploy: a sub-task is in an environment once every one of its PRs is deployed there. Sub-tasks live in production
+  // fold into one row; the rest show, a deploy nobody started in amber.
+  const deployRow = (s: (typeof coded)[number]): Node => {
     const envs = reg.deploy?.[s.key] ?? {}
-    const prod = envs.production
-    return {
-      key: `deploy:${s.key}`, icon: stepIcon(prod ?? (Object.values(envs).some(v => v && v !== 'pending') ? 'running' : 'pending')),
-      ref: { text: s.key, href: s.url }, title: s.title ?? '', tone: !envs.testing || envs.testing === 'pending' ? 'dim' : undefined,
-      right: ENVS.map(([env, short]) => `${short}${STATE_MARK[envs[env] ?? 'pending']}`).join(' '), children: [],
+    const marks = ENVS.map(([env, short]) => `${short}${STATE_MARK[envs[env] ?? 'pending']}`).join(' ')
+    const waiting = ENVS.find(([env]) => envs[env] === 'waiting')
+    const started = Object.values(envs).some(v => v && v !== 'pending' && v !== 'waiting')
+    const t = titled(s.title)
+    if (waiting) {
+      return {
+        key: `deploy:${s.key}`, icon: 'you', ref: { text: s.key, href: s.url }, title: t.title, tone: 'you',
+        note: [t.note, `Merged, no deploy started in ${waiting[0]}`, `Start it in TeamCity · ${marks}`].filter(Boolean).join('\n'), children: [],
+      }
     }
-  })
-  const live = coded.filter(s => reg.deploy?.[s.key]?.production === 'done').length
+    return {
+      key: `deploy:${s.key}`, icon: stepIcon(envs.production ?? (started ? 'running' : 'pending')),
+      ref: { text: s.key, href: s.url }, title: t.title, tone: started ? undefined : 'dim',
+      note: [t.note, marks].filter(Boolean).join(' · '), children: [],
+    }
+  }
+  const liveSubs = coded.filter(s => reg.deploy?.[s.key]?.production === 'done')
+  const moving = coded.filter(s => reg.deploy?.[s.key]?.production !== 'done')
+  const live = liveSubs.length
   const deployed = coded.length > 0 && live === coded.length && manualOpen === 0
+  const deployRows: Node[] = [
+    ...moving.map(deployRow),
+    ...(liveSubs.length ? [{
+      key: 'deploy:live', icon: 'done' as IconName, title: `${plural(live, 'sub-task')} live in production`, tone: 'dim' as const,
+      fold: { open: false }, children: liveSubs.map(deployRow),
+    }] : []),
+  ]
 
   // Verify: each done criterion from Plan, checked in production by forge or by the person.
   const criteria = reg.plan?.done ?? []
   const verifyRows: Node[] = criteria.map((c, i) => {
     const st = reg.verify?.[String(i)]
     // The person checks it: Plan writes `you`; `user` is read the same way.
-    const theirs = c.by === 'you' || c.by === 'user'
+    const theirs = c.by === 'you' || (c.by as string) === 'user'
     const yours = theirs && deployed && st !== 'passed' && st !== 'failed'
     return {
       key: `verify:${i}`, icon: yours ? 'you' : stepIcon(st), title: c.criterion,
       tone: yours ? 'you' : !st || st === 'pending' ? 'dim' : undefined,
-      right: theirs ? 'you' : ['forge', c.source].filter(Boolean).join(' · '), children: [],
+      note: theirs ? 'Yours to check' : `Forge checks it${c.source ? ` in ${c.source}` : ''}`, children: [],
     }
   })
   // No done criteria is not a pass: Plan must settle them before anything is verified.
@@ -150,6 +189,7 @@ export const nodes = (state: LensState, view: View, editor = 'vscode', signals: 
   }
   const passed = criteria.filter((_, i) => reg.verify?.[String(i)] === 'passed').length
   const verified = criteria.length > 0 && passed === criteria.length
+  const yoursOpen = verifyRows.filter(r => r.icon === 'you').length
 
   // Clean up: a sub-task is clean once its worktrees, branches and sessions are gone and it is closed.
   const clean = (k: keyof CleanupState) => subs.filter(s => {
@@ -159,7 +199,7 @@ export const nodes = (state: LensState, view: View, editor = 'vscode', signals: 
   const total = subs.length
   const cleanStage = (key: string, title: string, n: number): Node => ({
     key, icon: n === total && total > 0 ? 'done' : n > 0 ? 'progress' : 'pending', title,
-    tone: n === 0 ? 'dim' : undefined, right: count(n, total, 'sub-tasks'), children: [],
+    tone: n === 0 ? 'dim' : undefined, count: `${n} of ${total}`, children: [],
   })
   const pruned = reg.cleanup?.pruned === true
   const cleanRows: Node[] = [
@@ -171,39 +211,48 @@ export const nodes = (state: LensState, view: View, editor = 'vscode', signals: 
   ]
   const cleaned = total > 0 && clean('worktrees') === total && clean('branches') === total && clean('closed') === total
 
-  // A step's icon is its own; its colour says done, current or not started.
-  const step = (key: string, icon: IconName, title: string, done: boolean, current: boolean, more: Partial<Node> = {}): Node => ({
-    key, icon, role: done ? 'done' : current ? 'progress' : 'muted', title, strong: current,
-    tone: !done && !current ? 'dim' : undefined, children: [], ...more,
-  })
-  const sub = (key: string, icon: IconName, title: string, done: boolean): Node =>
+  // A step: its state icon (amber when something in it needs the person), its name, and its count inline. It folds;
+  // the step in progress, or one that needs the person, opens.
+  const needsIn = (rows: Node[]): boolean => rows.some(r => r.tone === 'you' || needsIn(r.children))
+  const step = (key: string, title: string, done: boolean, current: boolean, more: Partial<Node> = {}): Node => {
+    const children = more.children ?? []
+    const needs = needsIn(children)
+    return {
+      key, icon: needs ? 'you' : done ? 'done' : current ? 'progress' : 'pending', title, strong: current || needs,
+      tone: !done && !current && !needs ? 'dim' : undefined, fold: { open: (current || needs) && children.length > 0 }, ...more, children,
+    }
+  }
+  const sub = (key: string, title: string, done: boolean): Node =>
     ({ key, icon: done ? 'done' : 'pending', title, tone: done ? undefined : 'dim', children: [] })
   // A missing piece found after planning sends the run back to Plan until its sub-tasks exist.
   const gaps = Object.entries(reg.gaps ?? {}).sort(([a], [b]) => Number(a) - Number(b))
   const gapPlanning = gaps.some(([, g]) => g.state === 'planning')
   const gapRows: Node[] = gaps.map(([i, g]) => ({
     key: `gap:${i}`, icon: g.state === 'planning' ? 'progress' : 'done', title: `Missing: ${g.gap}`,
-    note: g.subTasks?.length ? `${g.subTasks.length} sub-task${g.subTasks.length === 1 ? '' : 's'} added` : undefined, children: [],
+    note: g.subTasks?.length ? `${plural(g.subTasks.length, 'sub-task')} added` : undefined, children: [],
   }))
   const type = reg.plan?.parent?.type ?? 'story'
+  const head = splitPrefix(state.title ?? reg.plan?.parent?.title ?? '')
   return {
     key: view.key, icon: type, ref: { text: view.key, href: ticketUrl(reg.plan?.trackerUrl, view.key) },
-    title: state.title ?? reg.plan?.parent?.title ?? '', strong: true,
+    title: head.rest, note: head.prefix, strong: true,
     action: refresh ? { label: 'Refresh', press: refresh, icon: 'refresh', always: true } : undefined,
     children: [
-      step('plan', 'plan', 'Plan', planned && !gapPlanning, !planned || gapPlanning, {
-        children: [sub('plan:investigate', 'investigate', 'Investigate', planned), sub('plan:breakdown', 'breakdown', 'Break down', planned), ...gapRows],
+      step('plan', 'Plan', planned && !gapPlanning, !planned || gapPlanning, {
+        count: total > 0 ? plural(total, 'sub-task') : undefined,
+        children: [sub('plan:investigate', 'Investigate', planned), sub('plan:breakdown', 'Break down', planned), ...gapRows],
       }),
-      step('implement', 'build', 'Implement', implemented, planned && !implemented, {
-        right: planned && !implemented ? count(merged, prs.length, 'merged') : undefined, children: tasks,
+      step('implement', 'Implement', implemented, planned && !implemented, {
+        count: prs.length ? count(merged, prs.length, 'merged') : undefined, children: tasks,
       }),
-      step('deploy', 'deploy', 'Deploy', deployed, implemented && !deployed || (live > 0 && !deployed), {
-        right: coded.length > 0 && !deployed ? count(live, coded.length, 'live') : undefined, children: deployRows,
+      step('deploy', 'Deploy', deployed, (implemented && !deployed) || (live > 0 && !deployed), {
+        count: coded.length > 0 ? count(live, coded.length, 'live') : undefined, children: deployRows,
       }),
-      step('verify', 'verify', 'Verify', verified, deployed && !verified, {
-        right: criteria.length > 0 && !verified ? count(passed, criteria.length, 'hold') : undefined, children: verifyRows,
+      step('verify', 'Verify', verified, deployed && !verified, {
+        count: yoursOpen > 0 ? `${yoursOpen} needs you` : criteria.length > 0 ? count(passed, criteria.length, 'hold') : undefined,
+        children: verifyRows,
       }),
-      step('cleanup', 'cleanup', 'Clean up', cleaned, verified && !cleaned, { children: cleanRows }),
+      step('cleanup', 'Clean up', cleaned, verified && !cleaned, { children: cleanRows }),
     ],
   }
 }
@@ -215,12 +264,20 @@ const gutter = (lasts: boolean[]): string =>
 // Each tree level is 3 cells deep; a row's guides sit at its open ancestors' cells.
 const LEVEL = 3
 
-type Flat = { n: Node; lasts: boolean[]; depth: number; guides: Guide[] }
+type Flat = { n: Node; lasts: boolean[]; depth: number; guides: Guide[]; open: boolean }
 
-const flatten = (n: Node, lasts: boolean[] = []): Flat[] => [
-  { n, lasts, depth: lasts.length * LEVEL, guides: [] },
-  ...n.children.flatMap((c, i) => flatten(c, [...lasts, i === n.children.length - 1])),
-]
+// Whether a folding row is open: the person's toggle, else its default.
+const isOpen = (n: Node, folds: Record<string, boolean>): boolean => folds[n.key] ?? n.fold?.open ?? true
+
+// The rows to draw. The header's children (the steps) sit at the left edge with no tree line; under an open row its
+// children follow, with tree lines.
+const flatten = (n: Node, folds: Record<string, boolean>, lasts: boolean[] = [], root = true): Flat[] => {
+  const open = isOpen(n, folds)
+  const self: Flat = { n, lasts, depth: lasts.length * LEVEL, guides: [], open }
+  if (!open) return [self]
+  if (root) return [self, ...n.children.flatMap(c => flatten(c, folds, [], false))]
+  return [self, ...n.children.flatMap((c, i) => flatten(c, folds, [...lasts, i === n.children.length - 1], false))]
+}
 
 // A guide at an ancestor's cell runs on below a row while a later sibling at that level follows; on the last one
 // it ends in a └. The devkit's rule, on forge's rows.
@@ -235,19 +292,23 @@ const withGuides = (rows: Flat[]): Flat[] =>
     }),
   }))
 
-// What GitHub says about a PR, on the line under its name: whose move it is, its checks, its reviewers and its size.
+// What GitHub says about a PR, on lines under its name: whose move it is, its checks, its reviewers and its size.
+// The pieces wrap as whole groups; past four reviewers the rest count as "+n".
 const signalLine = (k: string, s: Signal, ui: Ui): RenderElement => {
   const { Box, Text } = ui.t
   const Svg = ui.t.Svg!
   const desktop = ui.surface !== 'terminal' && !!ui.t.Svg
   const status = waitingOn(s)
+  const shown = s.reviewers.slice(0, 4)
+  const more = s.reviewers.length - shown.length
   return (
     <Box key={`signal:${k}`} flexDirection="row" flexWrap="wrap" columnGap={1} alignItems="center">
-      {status && <Text color={ROLES[status[1]].theme} weight="medium">{status[0]}</Text>}
+      {status && <Text color={ROLES[status[1]].theme} weight="medium">{breakable(status[0])}</Text>}
       {s.ci && glyph('dot', ui.surface, ui.t, CI_ROLE[s.ci])}
       {desktop
-        ? s.reviewers.map(r => <Box key={`who:${k}:${r.login}`} flexShrink={0}><Svg source={avatarSvg(r.login, r.review)} alt={`${r.login} ${r.review}`} width={18} height={18} /></Box>)
-        : s.reviewers.filter(r => r.review !== 'pending').map(r => <Text key={`who:${k}:${r.login}`} dimColor>{`${r.review === 'approved' ? '✓' : '✗'}${r.login}`}</Text>)}
+        ? shown.map(r => <Box key={`who:${k}:${r.login}`} flexShrink={0}><Svg source={avatarSvg(r.login, r.review)} alt={`${r.login} ${r.review}`} width={18} height={18} /></Box>)
+        : shown.filter(r => r.review !== 'pending').map(r => <Text key={`who:${k}:${r.login}`} dimColor>{`${r.review === 'approved' ? '✓' : '✗'}${r.login}`}</Text>)}
+      {more > 0 && <Text dimColor>{`+${more}`}</Text>}
       {s.files > 0 && <Text dimColor>{`${s.files} file${s.files === 1 ? '' : 's'}`}</Text>}
       {s.files > 0 && <Text color="success">{`+${s.additions}`}</Text>}
       {s.files > 0 && <Text color="error">{`−${s.deletions}`}</Text>}
@@ -255,30 +316,35 @@ const signalLine = (k: string, s: Signal, ui: Ui): RenderElement => {
   )
 }
 
-const line = (r: Flat, ui: Ui, open: (command: string[]) => unknown): RenderElement => {
+const line = (r: Flat, ui: Ui, open: (command: string[]) => unknown, toggle: (key: string, open: boolean) => unknown): RenderElement => {
   const { n } = r
   const { Box, Text, Link } = ui.t
   const kit = makeKit(ui.t, ui.surface)
   const desktop = kit.desktop
+  const soft = (text: string) => (desktop ? breakable(text) : text)
   const ref = n.ref && (n.ref.href && Link ? <Link href={n.ref.href}>{n.ref.text}</Link> : n.ref.text)
   const color = n.tone === 'you' ? ROLES.you.theme : undefined
   const rowKey = `row:${n.key}`
   // The kit's hover: the row tints under the pointer, and a secondary action shows only then.
   const scope = scopeOf(rowKey)
+  // A folding row's chevron: always there while open; on the desktop, otherwise only under the pointer.
+  const chevron = n.fold && n.children.length > 0 && HoverReveal(kit, `fold:${n.key}`, scope, r.open,
+    kit.control(`toggle:${n.key}`, r.open ? 'chevron-down' : 'chevron-right', ROLES.muted.hex, r.open ? 'Fold' : 'Open', () => toggle(n.key, r.open)))
   return (
     <Box key={rowKey} flexDirection="row" alignItems="flex-start" columnGap={1} position="relative" overflow="hidden"
       paddingLeft={desktop ? r.depth : 0} hover={desktop ? { scope, backgroundColor: kit.theme.hover } : undefined}>
       {desktop ? kit.guides(n.key, r.guides) : r.lasts.length > 0 && <Text color="subtle" mono>{gutter(r.lasts)}</Text>}
+      {chevron}
       {glyph(n.icon, ui.surface, ui.t, n.role)}
       <Box flexDirection="column" flexGrow={1} flexShrink={1} minWidth={0}>
         <Text color={color} dimColor={n.tone === 'dim'} weight={n.strong ? 'medium' : undefined}>
           {ref && <Text dimColor={n.tone !== 'you'}>{ref}</Text>}
-          {ref ? ` ${n.title}` : n.title}
+          {ref ? ` ${soft(n.title)}` : soft(n.title)}
+          {n.count && <Text dimColor weight="regular">{` · ${n.count}`}</Text>}
         </Text>
-        {n.note && <Text dimColor>{n.note}</Text>}
+        {n.note && n.note.split('\n').map((l, i) => <Text key={`note:${n.key}:${i}`} dimColor>{soft(l)}</Text>)}
         {n.signal && signalLine(n.key, n.signal, ui)}
       </Box>
-      {n.right && <Box key={`right:${n.key}`} flexShrink={0}><Text dimColor>{n.right}</Text></Box>}
       {n.action && HoverReveal(kit, `action:${n.key}`, scope, n.action.always,
         kit.control(`${n.action.icon ?? 'editor'}:${n.key}`, n.action.icon ?? 'open-in-editor',
           n.action.icon === 'refresh' ? ROLES.muted.hex : n.action.always ? ROLES.you.hex : ROLES.muted.hex, n.action.label,
@@ -301,8 +367,9 @@ export const building = (view: View, ui: Ui): RenderElement[] => {
       <Box key={`building:${l.id}`} flexDirection="column" marginTop={1}>
         <Box key={`building-head:${l.id}`} flexDirection="row" columnGap={1}>
           {glyph('build', ui.surface, ui.t, 'progress')}
-          <Box flexGrow={1} flexShrink={1} minWidth={0}><Text weight="medium">{`Building the ${name}`}</Text></Box>
-          <Text dimColor>{`${done.size} of ${rules.length}`}</Text>
+          <Box flexGrow={1} flexShrink={1} minWidth={0}>
+            <Text weight="medium">{`Building the ${name}`}<Text dimColor weight="regular">{` · ${done.size} of ${rules.length}`}</Text></Text>
+          </Box>
         </Box>
         {rules.map((rule, i) => (
           <Box key={`rule:${l.id}:${i}`} flexDirection="row" columnGap={1} alignItems="flex-start">
@@ -317,12 +384,14 @@ export const building = (view: View, ui: Ui): RenderElement[] => {
 
 export const tracker = (state: LensState, view: View, ui: Ui, opts: {
   editor?: string; signals?: Record<string, Signal>; open?: (command: string[]) => unknown; refresh?: () => unknown
+  folds?: Record<string, boolean>; toggle?: (key: string, open: boolean) => unknown
 } = {}): RenderElement => {
   const { Box } = ui.t
-  const rows = withGuides(flatten(nodes(state, view, opts.editor, opts.signals, opts.refresh)))
+  const rows = withGuides(flatten(nodes(state, view, opts.editor, opts.signals, opts.refresh), opts.folds ?? {}))
+  const toggle = opts.toggle ?? (() => undefined)
   return (
     <Box flexDirection="column" rowGap={0}>
-      {rows.map(r => line(r, ui, opts.open ?? (() => undefined)))}
+      {rows.map(r => line(r, ui, opts.open ?? (() => undefined), toggle))}
       {building(view, ui)}
     </Box>
   )

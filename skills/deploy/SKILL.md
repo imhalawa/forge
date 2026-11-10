@@ -5,7 +5,7 @@ argument-hint: <parent key> | watch <parent key>
 user-invocable: false
 ---
 
-Deploy follows each sub-task to production. The pipelines run testing, acceptance and production in a chain on their own: forge never approves, starts or promotes a deploy; it only reads where each one is. Follow `forge:forge`'s rules for everything the user sees. Write what you read with `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/registry.py" <state file> merge deploy`, JSON on stdin through a quoted heredoc: `{"<sub-task>": {"testing": "done", "acceptance": "running", "production": "pending"}}`, with `failed` for a failed deploy.
+Deploy follows each sub-task to production. The pipelines run testing, acceptance and production in a chain on their own: forge never approves, starts or promotes a deploy; it only reads where each one is. Follow `forge:forge`'s rules for everything the user sees. Write what you read with `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/registry.py" <state file> merge deploy`, JSON on stdin through a quoted heredoc: `{"<sub-task>": {"testing": "done", "acceptance": "running", "production": "pending"}}`, with `failed` for a failed deploy and `waiting` for one nobody started.
 
 A sub-task is in an environment only when every one of its merged PRs is deployed there, on every deploy track its repo has. Deploy counts sub-tasks, never PRs. A sub-task with no PR has no deploy: it is done when the tracker says so.
 
@@ -21,7 +21,7 @@ A repo with no entry is a finding: ask which TeamCity server and project id it d
 2. Write each sub-task's environments: `done` when every one of its PRs is deployed there, `running` while one is, `failed` when one failed, else `pending`.
 3. Then, the first that applies:
    - A deploy failed: send the `deploy-failed` card (`${CLAUDE_PLUGIN_ROOT}/skills/forge/templates.md`: the failed step and its reason, each environment's state) and ask with "Plan a fix" (a missing piece: back to Plan) and "I'll handle it" (change nothing). Never re-run it.
-   - Merged, but no build contains it, and nothing runs or waits in the queue for over 30 minutes after the merge: nobody started the deploy, and forge never starts one. A finding: "Merged but not deployed: <sub-task title>", line "No deploy has started for it in <environment>. Forge never starts one.", choices "I started it" (watch again) and "Leave it". Never count it as deployed.
+   - Merged, but no build contains it, and nothing runs or waits in the queue for over 30 minutes after the merge: nobody started the deploy, and forge never starts one. Write that environment `waiting` (`merge deploy`), so the pane shows it in amber as yours to start. A finding: "Merged but not deployed: <sub-task title>", line "No deploy has started for it in <environment>. Forge never starts one.", choices "I started it" (watch again) and "Leave it". Never count it as deployed.
    - Something still deploys: make sure the watcher runs (below), say in one line which sub-tasks are where, and stop.
    - Every sub-task is done in production: say so in one line. Forge goes on to Verify. Some are, others still build or merge: stop; forge comes back to them.
 
