@@ -39,6 +39,7 @@ Its brief carries the PR number, repo, worktree, branch, base, `baseSha`, state 
    - invalid (wrong about the code, or against a criterion): change nothing, add a note `{at, kind: "rejected", text}`;
    - a question for the user: change nothing, add a note `{kind: "question"}`.
    Before any fix, fast-forward to `origin/<branch>` if someone pushed; a diverged branch is a finding. Never reply or resolve.
+3b. **An agreed change**, a message from forge's main chat with the new criteria and rules: fast-forward first, then change the tests to the new wording, the code, the schema snapshots and every doc in the repo that states the old one (`git grep` for it), test first; run the suite, commit with the parent key, push, and update the PR's description to match (`gh pr edit --body`). Reply with each file changed.
 4. **State**, the first that applies: `changes` (fixing a comment), `failed`, `fixed`, `ci`, `call` (every merge rule met), `approved`, `passed`. Every merge rule is met when the PR targets the default branch (every base PR merged), has its required approvals, every check passed, every thread resolved, and `mergeStateStatus` is `CLEAN`.
 
 ## Merge (`merge <lane id>`)

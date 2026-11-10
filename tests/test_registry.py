@@ -256,9 +256,18 @@ class RegistryTests(unittest.TestCase):
         patch_row(reg, "S1·2", {"hold": None})
         self.assertNotIn("hold", reg["plan"]["prs"][1])
         with self.assertRaisesRegex(ValueError, "row takes only"):
-            patch_row(reg, "S1·2", {"criteria": []})
+            patch_row(reg, "S1·2", {"base": "main"})
         with self.assertRaisesRegex(ValueError, "mergeAfter is"):
             patch_row(reg, "S1·2", {"mergeAfter": {"pr": "S9·9", "deployedTo": "production"}})
+
+    def test_row_takes_an_agreed_change_to_criteria_and_rules(self):
+        reg = {"lanes": [], "plan": {"prs": [{"pr": "S1·1", "subTask": "P", "criteria": ["old"], "rules": ["When old, then x."]}]}}
+        patch_row(reg, "S1·1", {"criteria": ["Given quantity 0, then INVALID_QUANTITY"], "rules": ["When the quantity is 0, the answer is INVALID_QUANTITY."]})
+        self.assertEqual(reg["plan"]["prs"][0]["rules"], ["When the quantity is 0, the answer is INVALID_QUANTITY."])
+        with self.assertRaisesRegex(ValueError, "same length"):
+            patch_row(reg, "S1·1", {"rules": ["a", "b"]})
+        with self.assertRaisesRegex(ValueError, "list of text"):
+            patch_row(reg, "S1·1", {"criteria": "one"})
 
     def test_merge_takes_only_life_cycle_records(self):
         with self.assertRaisesRegex(ValueError, "merge takes one of"):

@@ -1,0 +1,34 @@
+{
+  "schema_version": "1.1",
+  "name": "forge-carries-an-agreed-change",
+  "description": "An agreed change is carried to every place that states it, without asking.",
+  "tags": [
+    "forge"
+  ],
+  "execution": {
+    "prompt": "/forge PROJ-500\n\nThe user says: \"Agreed: retry once, not 3 times. A second failure goes to the dead-letter queue.\"\n\nstate file /Users/me/.claude/forge/PROJ-500.json:\n```json\n{\"plan\": {\"parent\": {\"key\": \"PROJ-500\", \"title\": \"Retry failed refunds\", \"type\": \"story\"}, \"trackerUrl\": \"https://example.atlassian.net\", \"done\": [{\"criterion\": \"Failed refunds are retried within an hour\", \"by\": \"forge\", \"source\": \"Datadog\", \"how\": \"monitor refund.retry.lag below 60 minutes\"}], \"prs\": [{\"pr\": \"S1\\u00b71\", \"name\": \"Retry a failed refund\", \"subTask\": \"PROJ-501\", \"title\": \"Retry failed refunds\", \"repo\": \"/w/refunds\", \"base\": \"main\", \"criteria\": [\"Given a failed refund, when the retry job runs, then it is retried up to 3 times\"], \"rules\": [\"When a refund fails, the retry job tries it again up to 3 times.\"], \"dependsOn\": []}]}, \"lanes\": [{\"id\": \"wt-1\", \"subTask\": \"PROJ-501\", \"pr\": \"S1\\u00b71\", \"repo\": \"/w/refunds\", \"branch\": \"PROJ-500-retry-failed-refund\", \"base\": \"main\", \"baseSha\": \"a1b2c3d\", \"worktree\": \"/w/refunds/.worktrees/PROJ-500-retry-failed-refund\", \"runner\": {\"kind\": \"session\", \"id\": \"local_1\"}, \"dependsOn\": [], \"state\": \"open\", \"prNumber\": 12, \"prUrl\": \"https://github.com/acme/refunds/pull/12\"}]}\n```\n\ngit -C /w/refunds grep -n \"3 times\": README.md:14 and docs/retries.md:7 and src/RetryJob.cs:22.\nThe PR acme/refunds#12 is open; its description says \"retried up to 3 times\". The tracker sub-task PROJ-501 says \"up to 3 retries\" in its acceptance criteria.\n\nShell, git, tracker, GitHub, session and state-file tools are not available in this session; their outputs are captured above. Treat them as the tool output and do not try to call those tools. Report every change you would make and every message you would send, and where. If the question tool is not available, write the one question you would ask and its options instead.\nThe time now is 2026-11-10T09:00:00Z.\n",
+    "max_turns": 12,
+    "allowed_tools": [
+      "Read",
+      "Glob",
+      "Grep",
+      "Skill"
+    ],
+    "env": {}
+  },
+  "runs": 3,
+  "graders": [
+    {
+      "type": "llm",
+      "name": "updates-everywhere",
+      "focus": "last_message",
+      "criteria": "The tools are not available in this test, so judge what forge says it changes and sends, not whether it ran. PASS if its reply covers each of these places with the change to 'retry once, then the dead-letter queue': the plan row's criteria and rules, the tracker sub-task PROJ-501, the PR's description, and the code, tests and docs (README.md, docs/retries.md, src/RetryJob.cs) through the PR's session. FAIL only if one of those places is missing from the reply."
+    },
+    {
+      "type": "llm",
+      "name": "does-not-ask",
+      "focus": "last_message",
+      "criteria": "PASS if forge asks no question about whether to update these places, and names what it updated. FAIL if it asks whether, or which, to update."
+    }
+  ]
+}

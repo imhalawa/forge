@@ -168,13 +168,15 @@ def fill(registry: dict, facts: dict) -> list[str]:
 
 MERGEABLE = {"deploy", "verify", "cleanup", "gaps", "watchers"}
 
-# The plan row fields a run may change after planning: a hold, a deploy that must come first, and the names.
-ROW_FIELDS = {"name", "title", "hold", "mergeAfter"}
+# The plan row fields a run may change after planning: a hold, a deploy that must come first, the names, and the
+# criteria and rules once the user agrees a change to them.
+ROW_FIELDS = {"name", "title", "hold", "mergeAfter", "criteria", "rules"}
 
 
 def patch_row(registry: dict, pr: str, fields: dict) -> dict:
     """Changes one plan row: `hold` ("<why>" or null), `mergeAfter` ({"pr": "<key>", "deployedTo": "<environment>"} or
-    null), `name` or `title`. Any other field is refused, so the plan's criteria and order only change through Plan."""
+    null), `name` or `title`, and `criteria` and `rules` (lists of text, the same length) after an agreed change. Any
+    other field is refused, so the plan's order and bases only change through Plan."""
     unknown = set(fields) - ROW_FIELDS
     if unknown:
         raise ValueError(f"row takes only {sorted(ROW_FIELDS)}, not {sorted(unknown)}")
@@ -186,6 +188,13 @@ def patch_row(registry: dict, pr: str, fields: dict) -> dict:
     if after is not None and not (isinstance(after, dict) and any(r.get("pr") == after.get("pr") for r in rows)
                                   and after.get("deployedTo") in ("testing", "acceptance", "production")):
         raise ValueError("mergeAfter is {pr: <a plan row>, deployedTo: testing|acceptance|production}")
+    for key in ("criteria", "rules"):
+        if key in fields and not (isinstance(fields[key], list) and all(isinstance(x, str) and x.strip() for x in fields[key])):
+            raise ValueError(f"{key} is a list of text")
+    criteria = fields.get("criteria", row.get("criteria"))
+    rules = fields.get("rules", row.get("rules"))
+    if ("criteria" in fields or "rules" in fields) and criteria is not None and rules is not None and len(criteria) != len(rules):
+        raise ValueError("criteria and rules must have the same length: one plain rule per criterion")
     for key, value in fields.items():
         if value is None:
             row.pop(key, None)

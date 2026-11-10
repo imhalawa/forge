@@ -38,5 +38,6 @@ Start one session per PR with `start_session` (`initiation: user_asked`, `contex
    3. Write the least code that passes it, then refactor, and run the affected tests.
 3. Follow `forge:cq-dotnet` for C#. Run the `code-review` skill at high effort with `--fix`; skip a finding that contradicts a criterion and say why.
 4. Run the full suite. Red is a finding.
+An agreed change (forge's **Agreements** rule) arrives as a message from forge's main chat with the new criteria and rules. Apply it at once, test first: change the tests to the new wording, then the code, the schema snapshots and every doc in the repo that states the old one (`git grep` for it), run the suite, and reply with each file changed. Then go on.
 5. Leave every change unstaged: never commit, stage or stash. If something was committed or staged, undo it with `git reset --mixed <baseSha>`, which keeps the changes.
 6. Hand back: patch `{"state": "review"}`. A finding instead: patch `{"state": "stopped", "stoppedFrom": "building", "finding": {...}}`. Reply with one line per criterion and its test, then end.
