@@ -1,6 +1,6 @@
 {
   "name": "forge",
-  "version": "0.13.1",
+  "version": "0.13.2",
   "description": "Take a ticket from plan to a clean, verified finish with one command, `/forge`: Plan, Implement, Deploy, Verify, Clean up. Forge builds each PR test first and leaves it for you to review and stage, then commits, opens, follows and merges it; follows TeamCity deploys and Datadog checks; and asks you only what is yours to decide.",
   "author": {
     "name": "Mohamed Halawa",
