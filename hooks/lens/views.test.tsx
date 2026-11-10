@@ -241,8 +241,8 @@ test('the tracker is the five steps: Plan, Implement, Deploy, Verify, Clean up',
     '│ └─ ◐ PROJ-3 Remove scope',
     '│   └─ ◐ Wt 2',
     '├─ ⇪ Deploy 0 of 2 live',
-    '│ ├─ ○ PROJ-2 Remove config T ○  A ○  P ○',
-    '│ └─ ○ PROJ-3 Remove scope T ○  A ○  P ○',
+    '│ ├─ ○ PROJ-2 Remove config T○ A○ P○',
+    '│ └─ ○ PROJ-3 Remove scope T○ A○ P○',
     '├─ ⛉ Verify',
     '└─ ⌫ Clean up',
     '  ├─ ○ Worktrees removed 0 of 2 sub-tasks',
@@ -264,7 +264,7 @@ test('Deploy counts sub-tasks by environment; Verify checks each done criterion 
   } as never
   const l = lines(pane(EMPTY, uiTerminal, { ...VIEW, registry }))
   expect(l).toContain('├─ ⇪ Deploy')
-  expect(l).toContain('│ ├─ ✓ PROJ-2 Remove config T ✓  A ✓  P ✓')
+  expect(l).toContain('│ ├─ ✓ PROJ-2 Remove config T✓ A✓ P✓')
   expect(l).toContain('├─ ⛉ Verify 1 of 2 hold')
   expect(l).toContain('│ ├─ ✓ No service calls the scope forge · Datadog')
   expect(l).toContain('│ └─ ! The settings page still loads you')
@@ -452,7 +452,8 @@ test('a sub-task with no pull request shows, and holds Implement and Deploy open
   const plan = { ...REGISTRY.plan!, prs: REGISTRY.plan!.prs.slice(0, 1), tasks: [{ key: 'PROJ-9', title: 'Archive the pipeline', status: 'open' }] }
   const registry = { ...REGISTRY, plan, lanes: REGISTRY.lanes.slice(0, 1), deploy: { [REGISTRY.plan!.prs[0]!.subTask]: { testing: 'done', acceptance: 'done', production: 'done' } } } as never
   const l = lines(pane(EMPTY, uiTerminal, { ...VIEW, registry })).join('\n')
-  expect(l).toContain('PROJ-9 Archive the pipeline no pull request')
+  expect(l).toContain('PROJ-9 Archive the pipeline')
+  expect(l).toContain('No pull request')
   expect(l).not.toContain('Verify 0 of')
   const doneReg = { ...(registry as object), plan: { ...plan, tasks: [{ key: 'PROJ-9', title: 'Archive the pipeline', status: 'Done' }] } } as never
   expect(lines(pane(EMPTY, uiTerminal, { ...VIEW, registry: doneReg })).join('\n')).toContain('No done criteria yet')
@@ -461,7 +462,7 @@ test('a sub-task with no pull request shows, and holds Implement and Deploy open
 test('a held pull request waits and says why, not amber', () => {
   const plan = { ...REGISTRY.plan!, prs: REGISTRY.plan!.prs.map((r, i) => (i === 1 ? { ...r, hold: 'Wait for the platform team' } : r)) }
   const l = lines(pane(EMPTY, uiTerminal, { ...VIEW, registry: { ...REGISTRY, plan } })).join('\n')
-  expect(l).toContain('held')
+  expect(l).toContain('Held: Wait for the platform team')
 })
 
 test('the root row carries a refresh control when the pane can refresh', () => {
@@ -484,4 +485,12 @@ test('a criterion written as by "user" is the person\'s, like "you"', () => {
   const l = lines(pane(EMPTY, uiTerminal, { ...VIEW, registry: { ...REGISTRY, plan } })).join('\n')
   expect(l).toContain('The stacks are empty you')
   expect(l).not.toContain('forge · AWS')
+})
+
+test('a long label goes under the title; a short one stays at the right and never shrinks', () => {
+  const plan = { ...REGISTRY.plan!, tasks: [{ key: 'PROJ-9', title: 'Archive the pipeline', status: 'open' }] }
+  const tree = pane(EMPTY, ui, { ...VIEW, registry: { ...REGISTRY, plan } }) as unknown as { props: Record<string, unknown> }
+  const rights = JSON.stringify(tree).match(/"key":"right:[^"]+","flexShrink":0/g) ?? []
+  expect(rights.length).toBeGreaterThan(0)
+  expect(JSON.stringify(tree)).not.toContain('"key":"right:PROJ-9"')
 })

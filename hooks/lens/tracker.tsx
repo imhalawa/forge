@@ -27,7 +27,8 @@ export type Node = {
   title: string
   tone?: 'you' | 'dim'
   strong?: boolean
-  right?: string
+  right?: string                // short: a count or the deploy marks, kept on one line at the right
+  note?: string                 // longer: drawn under the title, so a narrow pane never splits it
   // A row's one action: open its worktree (`target`), or run `press`; `icon` defaults to the editor's.
   action?: { label: string; target?: string[]; press?: () => unknown; icon?: 'open-in-editor' | 'refresh'; always: boolean }
   signal?: Signal
@@ -64,10 +65,10 @@ const prNode = (n: PrNode, view: View, only: boolean, editor: string, signals: R
   // A held PR, or one that merges only after another is deployed, waits: forge does not ask to merge it.
   const after = row?.mergeAfter && view.registry.plan?.prs.find(r => r.pr === row.mergeAfter!.pr)
   const held = n.state !== 'merged' && (row?.hold || after)
-    ? (row?.hold ? 'held' : `after ${after?.name ?? row!.mergeAfter!.pr} is in ${row!.mergeAfter!.deployedTo}`) : undefined
+    ? (row?.hold ? `Held: ${row.hold}` : `Merges after ${after?.name ?? row!.mergeAfter!.pr} is in ${row!.mergeAfter!.deployedTo}`) : undefined
   if (held) {
     return {
-      key: n.pr, icon: 'waiting', ref, title: name, tone: 'dim', right: held,
+      key: n.pr, icon: 'waiting', ref, title: name, tone: 'dim', note: held,
       signal: n.url ? signals[n.url] : undefined, children: [],
     }
   }
@@ -104,7 +105,7 @@ export const nodes = (state: LensState, view: View, editor = 'vscode', signals: 
       const finished = manualDone(s)
       return {
         key: s.key, icon: finished ? 'done' : 'pending', ref: { text: s.key, href: s.url }, title: s.title ?? '',
-        tone: finished ? undefined : 'dim', right: 'no pull request', children: [],
+        tone: finished ? undefined : 'dim', note: 'No pull request', children: [],
       }
     }
     const live = s.prs.filter(n => !n.dropped)
@@ -124,7 +125,7 @@ export const nodes = (state: LensState, view: View, editor = 'vscode', signals: 
     return {
       key: `deploy:${s.key}`, icon: stepIcon(prod ?? (Object.values(envs).some(v => v && v !== 'pending') ? 'running' : 'pending')),
       ref: { text: s.key, href: s.url }, title: s.title ?? '', tone: !envs.testing || envs.testing === 'pending' ? 'dim' : undefined,
-      right: ENVS.map(([env, short]) => `${short} ${STATE_MARK[envs[env] ?? 'pending']}`).join('  '), children: [],
+      right: ENVS.map(([env, short]) => `${short}${STATE_MARK[envs[env] ?? 'pending']}`).join(' '), children: [],
     }
   })
   const live = coded.filter(s => reg.deploy?.[s.key]?.production === 'done').length
@@ -182,7 +183,7 @@ export const nodes = (state: LensState, view: View, editor = 'vscode', signals: 
   const gapPlanning = gaps.some(([, g]) => g.state === 'planning')
   const gapRows: Node[] = gaps.map(([i, g]) => ({
     key: `gap:${i}`, icon: g.state === 'planning' ? 'progress' : 'done', title: `Missing: ${g.gap}`,
-    right: g.subTasks?.length ? `${g.subTasks.length} sub-task${g.subTasks.length === 1 ? '' : 's'}` : undefined, children: [],
+    note: g.subTasks?.length ? `${g.subTasks.length} sub-task${g.subTasks.length === 1 ? '' : 's'} added` : undefined, children: [],
   }))
   const type = reg.plan?.parent?.type ?? 'story'
   return {
@@ -274,9 +275,10 @@ const line = (r: Flat, ui: Ui, open: (command: string[]) => unknown): RenderElem
           {ref && <Text dimColor={n.tone !== 'you'}>{ref}</Text>}
           {ref ? ` ${n.title}` : n.title}
         </Text>
+        {n.note && <Text dimColor>{n.note}</Text>}
         {n.signal && signalLine(n.key, n.signal, ui)}
       </Box>
-      {n.right && <Text dimColor>{n.right}</Text>}
+      {n.right && <Box key={`right:${n.key}`} flexShrink={0}><Text dimColor>{n.right}</Text></Box>}
       {n.action && HoverReveal(kit, `action:${n.key}`, scope, n.action.always,
         kit.control(`${n.action.icon ?? 'editor'}:${n.key}`, n.action.icon ?? 'open-in-editor',
           n.action.icon === 'refresh' ? ROLES.muted.hex : n.action.always ? ROLES.you.hex : ROLES.muted.hex, n.action.label,
