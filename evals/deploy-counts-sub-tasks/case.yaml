@@ -1,0 +1,28 @@
+{
+  "schema_version": "1.1",
+  "name": "deploy-counts-sub-tasks",
+  "description": "A sub-task is live in an environment only when every one of its PRs is deployed there.",
+  "tags": [
+    "forge"
+  ],
+  "execution": {
+    "prompt": "Use the forge:deploy skill for PROJ-500.\n\nState file /Users/me/.claude/forge/PROJ-500.json: sub-task PROJ-501 has two merged PRs, #12 (merge commit c1) and #13 (merge commit c2), in refunds; PROJ-502 has one merged PR, #77 (merge commit c3), in refund-page.\nTeamCity: refunds production deploy #40 contains c1 but not c2 and finished; refunds acceptance deploy #39 contains c1 and c2 and finished; refund-page production deploy #8 contains c3 and finished.\nReport what you write to the state file and what you tell the user.\n\nShell, git, tracker, GitHub and state-file tools are not available in this session; their outputs are captured below. Treat them as the tool output and do not try to call those tools. If the question tool is not available, write the one question you would ask and its options instead.\nThe time now is 2026-11-10T09:00:00Z.\n",
+    "max_turns": 12,
+    "allowed_tools": [
+      "Read",
+      "Glob",
+      "Grep",
+      "Skill"
+    ],
+    "env": {}
+  },
+  "runs": 3,
+  "graders": [
+    {
+      "type": "llm",
+      "name": "counts-per-sub-task",
+      "focus": "last_message",
+      "criteria": "PASS if PROJ-501 is not done in production (only one of its two PRs is there) while its acceptance is done, PROJ-502 is done in production, and the user is told one of two sub-tasks is live, by sub-task title or key, not by PR. FAIL if PROJ-501 is reported live in production or the count is of PRs."
+    }
+  ]
+}

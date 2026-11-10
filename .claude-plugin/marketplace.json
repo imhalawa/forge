@@ -1,0 +1,16 @@
+{
+  "name": "forge",
+  "description": "A Claude Code plugin and mod: take a ticket from plan to a verified, cleaned-up finish with one command.",
+  "owner": {
+    "name": "Mohamed Halawa",
+    "email": "imhalawa@outlook.com"
+  },
+  "plugins": [
+    {
+      "name": "forge",
+      "source": "./",
+      "description": "Take a ticket from plan to a verified, cleaned-up finish with one command: /forge.",
+      "keywords": ["workflow", "tdd", "pull-requests", "github", "jira", "deploy", "verify", "pane", "mod"]
+    }
+  ]
+}

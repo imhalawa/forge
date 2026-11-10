@@ -1,0 +1,28 @@
+{
+  "schema_version": "1.1",
+  "name": "capture-rule-finds-duplicate",
+  "description": "A new rule that an existing rule already covers is reported as a duplicate before any write.",
+  "tags": [
+    "forge"
+  ],
+  "execution": {
+    "prompt": "Never abbreviate variable names, write them in full.",
+    "max_turns": 10,
+    "allowed_tools": [
+      "Read",
+      "Glob",
+      "Grep",
+      "Skill"
+    ],
+    "env": {}
+  },
+  "runs": 3,
+  "graders": [
+    {
+      "type": "llm",
+      "name": "verdict",
+      "focus": "last_message",
+      "criteria": "The reply names the existing naming rule about full descriptive names without abbreviations as a duplicate, and asks the user to keep, replace, or merge. It does not say the rule was added."
+    }
+  ]
+}

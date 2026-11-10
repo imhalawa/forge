@@ -1,0 +1,34 @@
+{
+  "schema_version": "1.1",
+  "name": "forge-asks-review-and-stage",
+  "description": "A built change with nothing staged: forge asks the user to review and stage it in their editor, in plain words.",
+  "tags": [
+    "forge"
+  ],
+  "execution": {
+    "prompt": "/forge PROJ-500\n\nstate file /Users/me/.claude/forge/PROJ-500.json:\n```json\n{\"plan\": {\"parent\": {\"key\": \"PROJ-500\", \"title\": \"Retry failed refunds\", \"type\": \"story\"}, \"trackerUrl\": \"https://example.atlassian.net\", \"done\": [{\"criterion\": \"Failed refunds are retried within an hour\", \"by\": \"forge\", \"source\": \"Datadog\", \"how\": \"monitor refund.retry.lag below 60 minutes\"}, {\"criterion\": \"The refund page shows the retry status\", \"by\": \"you\"}], \"prs\": [{\"pr\": \"S1\\u00b71\", \"name\": \"Retry a failed refund\", \"subTask\": \"PROJ-501\", \"title\": \"Retry failed refunds\", \"repo\": \"/w/refunds\", \"base\": \"main\", \"criteria\": [\"Given a failed refund, when the retry job runs, then it is retried once\"], \"dependsOn\": []}, {\"pr\": \"S2\\u00b71\", \"name\": \"Show the retry status\", \"subTask\": \"PROJ-502\", \"title\": \"Show retry status\", \"repo\": \"/w/refund-page\", \"base\": \"main\", \"criteria\": [\"Given a retried refund, when the page loads, then it shows Retrying\"], \"dependsOn\": []}]}, \"lanes\": [{\"id\": \"wt-1\", \"subTask\": \"PROJ-501\", \"pr\": \"S1\\u00b71\", \"repo\": \"/w/refunds\", \"branch\": \"PROJ-500-retry-failed-refund\", \"base\": \"main\", \"baseSha\": \"a1b2c3d\", \"worktree\": \"/w/refunds/.worktrees/PROJ-500-retry-failed-refund\", \"runner\": null, \"dependsOn\": [], \"state\": \"review\", \"prNumber\": null}]}\n```\ngit -C /w/refunds/.worktrees/PROJ-500-retry-failed-refund diff --stat:\n```\n src/RetryJob.cs      | 42 ++++++\n test/RetryJobTests.cs | 31 +++++\n 2 files changed, 73 insertions(+)\n```\ngit -C /w/refunds/.worktrees/PROJ-500-retry-failed-refund diff --cached --stat: (empty)\ntracker: PROJ-500 and its sub-tasks PROJ-501, PROJ-502 exist.\n\nShell, git, tracker, GitHub and state-file tools are not available in this session; their outputs are captured below. Treat them as the tool output and do not try to call those tools. If the question tool is not available, write the one question you would ask and its options instead.\nThe time now is 2026-11-10T09:00:00Z.\n",
+    "max_turns": 12,
+    "allowed_tools": [
+      "Read",
+      "Glob",
+      "Grep",
+      "Skill"
+    ],
+    "env": {}
+  },
+  "runs": 3,
+  "graders": [
+    {
+      "type": "llm",
+      "name": "asks-review-and-stage",
+      "focus": "last_message",
+      "criteria": "PASS if the one question asks the user to review and stage the change (for example 'Review and stage Retry a failed refund in refunds?') with an editor option such as 'Open editor' and a 'Later' option. FAIL if it asks to open a pull request now, offers 'request changes', 'raise' or similar, or asks more than one question."
+    },
+    {
+      "type": "llm",
+      "name": "plain-words",
+      "focus": "last_message",
+      "criteria": "PASS if the user-facing text never shows S1\u00b71, S2\u00b71, a branch name, a lane id such as wt-1, a SHA, or the words lane, runner, raise or registry. FAIL otherwise."
+    }
+  ]
+}

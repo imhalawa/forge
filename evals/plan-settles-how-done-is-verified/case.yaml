@@ -1,0 +1,28 @@
+{
+  "schema_version": "1.1",
+  "name": "plan-settles-how-done-is-verified",
+  "description": "Planning settles, for each done outcome, whether forge checks it in production and how, or the user does.",
+  "tags": [
+    "forge"
+  ],
+  "execution": {
+    "prompt": "Use the forge:plan skill for PROJ-600.\n\ntracker PROJ-600: 'Retry failed refunds'. Done when: (1) failed refunds are retried within an hour; (2) the refund page shows the retry status. No sub-tasks. The user has confirmed the problem and answered its open questions. Datadog has the metric refund.retry.lag.\nGo on to the next stage and stop at its question.\n\nShell, git, tracker, GitHub and state-file tools are not available in this session; their outputs are captured below. Treat them as the tool output and do not try to call those tools. If the question tool is not available, write the one question you would ask and its options instead.\nThe time now is 2026-11-10T09:00:00Z.\n",
+    "max_turns": 12,
+    "allowed_tools": [
+      "Read",
+      "Glob",
+      "Grep",
+      "Skill"
+    ],
+    "env": {}
+  },
+  "runs": 3,
+  "graders": [
+    {
+      "type": "llm",
+      "name": "verification-per-outcome",
+      "focus": "last_message",
+      "criteria": "PASS if, before breaking the work down, forge settles how each outcome is verified in production: (1) by forge through Datadog with refund.retry.lag, (2) by the user, since nothing can prove it, and asks the user to confirm that list. FAIL if it skips straight to the approach or sub-tasks."
+    }
+  ]
+}
