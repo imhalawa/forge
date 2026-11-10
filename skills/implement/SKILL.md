@@ -27,7 +27,7 @@ Never continue the old session. Add the worktree if it is missing (`git worktree
 
 ## The session
 
-Start one session per PR with `start_session` (`initiation: user_asked`, `context: fresh`, `cwd: <worktree>`, `use_worktree: false`, title `<parent-key> <name>`), or, without it, a background agent told to `cd <worktree> &&` every command. Its brief is its only context: the parent key, the sub-task key and title, this PR's `name` and criteria in full, the worktree, branch, base and `baseSha`, the state file path and its lane id, the plugin root, and: "Run `forge:implement build`. Never call `forge_report`, never push, never commit."
+Start one session per PR with `start_session` (`initiation: user_asked`, `context: fresh`, `cwd: <worktree>`, `use_worktree: false`, title `<parent-key> <name>`), after checking that `git -C <worktree> rev-parse --show-toplevel` prints the worktree (forge's **Sessions** rule), or, without it, a background agent told to `cd <worktree> &&` every command. Its brief is its only context: the parent key, the sub-task key and title, this PR's `name` and criteria in full, the worktree, branch, base and `baseSha`, the state file path and its lane id, the plugin root, and: "Run `forge:implement build`. Never call `forge_report`, never push, never commit."
 
 ## Build (`build`, in the PR's session)
 

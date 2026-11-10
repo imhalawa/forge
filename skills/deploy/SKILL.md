@@ -20,7 +20,7 @@ A repo with no deploy build in TeamCity is a finding: ask where it deploys from.
 
 ## The watcher
 
-The pipelines move on their own, so forge checks them regularly. One watcher per ticket, a session of its own: start it with `start_session` (`initiation: user_asked`, `context: fresh`, `use_worktree: false`, title `<parent-key> deploys`) when a sub-task's last PR merges and no watcher runs (`watchers.deploy` is unset, or its session is gone), and record it with `merge watchers` and `{"deploy": {"kind": "session", "id": "<id>"}}`. Its brief: the parent key, the state file, the plugin root, and "Run `forge:deploy watch <parent key>`. Never call `forge_report`, never approve, start or re-run a deploy."
+The pipelines move on their own, so forge checks them regularly. One watcher per ticket, a session of its own: start it with `start_session` (`initiation: user_asked`, `context: fresh`, `cwd:` the main checkout of the plan's first repo (a git repository; check it with `git -C <repo> rev-parse --show-toplevel`), `use_worktree: false`, title `<parent-key> deploys`) when a sub-task's last PR merges and no watcher runs (`watchers.deploy` is unset, or its session is gone), and record it with `merge watchers` and `{"deploy": {"kind": "session", "id": "<id>"}}`. Its brief: the parent key, the state file, the plugin root, and "Run `forge:deploy watch <parent key>`. Never call `forge_report`, never approve, start or re-run a deploy."
 
 ## Watch (`watch <parent key>`, in the watcher's session)
 

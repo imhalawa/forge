@@ -27,7 +27,7 @@ The same holds when the user answers "Open PR", says they staged, or a commit fi
    - same repo: `gh pr create --base <default or base branch> --head <branch>`;
    - fork, not built on another: `gh pr create --repo <upstream> --base <default> --head <fork-owner>:<branch>`;
    - fork, built on another: a draft into `<default>` with the line `Depends on #<base PR>; review only the commits after <base sha>`, and `prDraftOf` the base lane.
-6. Patch `state: open`, `prNumber`, `prUrl`, `deferredAt: null`, and move the sub-task to the tracker's review status. Start following it (`follow`, below, in the PR's session: message it if it runs, else start a fresh one with the follow brief). Say in one line where the PR is.
+6. Patch `state: open`, `prNumber`, `prUrl`, `deferredAt: null`, and move the sub-task to the tracker's review status. Start following it (`follow`, below, in the PR's session: message it if it runs, else start a fresh one with the follow brief, `cwd: <worktree>` and `use_worktree: false`, after the same check as `implement`'s). Say in one line where the PR is.
 
 ## Follow (`follow <lane id>`, in the PR's session)
 
