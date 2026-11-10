@@ -145,8 +145,11 @@ test('a call sent again keeps its place', () =>
 
 // Switching tickets
 
-test('a lane report before any conductor report is ignored', () =>
-  expect(fold([lane('wt-1', 'building')])).toEqual(EMPTY))
+test('a lane report with no ticket on view yet takes its own ticket (after a reload, no started report needed)', () => {
+  const s = fold([lane('wt-1', 'building')])
+  expect(s.ticket).toBe('PROJ-1')
+  expect(Object.keys(s.lanes)).toHaveLength(1)
+})
 
 test('a lane report for another ticket is ignored', () => {
   const s = run([lane('wt-1', 'building'), { ...lane('wt-9', 'review', true), ticket: 'PROJ-2' }])

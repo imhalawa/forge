@@ -21,7 +21,11 @@ export type PrNode = {
   report?: ForgeReport
 }
 
-export type SubNode = { key: string; title?: string; url: string | null; prs: PrNode[]; merged: number; total: number }
+export type SubNode = {
+  key: string; title?: string; url: string | null; prs: PrNode[]; merged: number; total: number
+  // A sub-task with no pull request: its tracker status, `done` when it is finished.
+  manual?: { status?: string }
+}
 
 const AT_REVIEW = new Set(['review', 'call', 'open', 'ci', 'passed', 'failed', 'changes', 'fixed', 'approved', 'merged'])
 
@@ -52,7 +56,10 @@ export const tree = (view: View, lens: LensState): SubNode[] => {
       lane: key,
       state: stateOf(lane, registry.lanes),
       dropped: lane?.state === 'dropped',
-      needsYou: !!lane && (NEEDS_YOU.has(lane.state) || lens.needsYou.includes(key!)),
+      // A report's call holds only while the lane is still where the report saw it: once the registry moves on
+      // (answered, merged, stopped), the old card no longer asks anything.
+      needsYou: !!lane && (NEEDS_YOU.has(lane.state)
+        || (lens.needsYou.includes(key!) && (!report?.state || report.state === stateOf(lane, registry.lanes)))),
       branch: lane?.branch,
       base: report?.pr?.base ?? lane?.base,
       number,
@@ -67,5 +74,12 @@ export const tree = (view: View, lens: LensState): SubNode[] => {
     if (node.state === 'merged') sub.merged += 1
     subs.set(subTask, sub)
   }
+  for (const task of registry.plan?.tasks ?? []) {
+    if (subs.has(task.key)) continue
+    subs.set(task.key, { key: task.key, title: task.title, url: ticketUrl(trackerUrl, task.key), prs: [], merged: 0, total: 0, manual: { status: task.status } })
+  }
   return [...subs.values()]
 }
+
+// A sub-task with no pull request is finished when its tracker status says so.
+export const manualDone = (s: SubNode): boolean => !!s.manual && /^(done|closed|resolved)$/iu.test(s.manual.status ?? '')

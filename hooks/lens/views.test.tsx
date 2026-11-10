@@ -6,7 +6,7 @@ import { pane } from './pane'
 import { apply, EMPTY } from './state'
 import { ciOf, parseSignal, type Signal, waitingOn } from './signals'
 import { editorCommand } from './tracker'
-import type { View } from './tree'
+import { tree, type View } from './tree'
 
 // A table of plain-data elements, so a view's tree can be read without a surface.
 // A drawn tree (`ui.drawn()`) carries its children beside the props instead.
@@ -447,3 +447,41 @@ test('a building change gets a lower section: every rule in full, ticked off as 
 
 test('no change building, no lower section', () =>
   expect(lines(pane(EMPTY, uiTerminal, VIEW)).some(x => x.includes('Building the'))).toBe(false))
+
+test('a sub-task with no pull request shows, and holds Implement and Deploy open until it is done', () => {
+  const plan = { ...REGISTRY.plan!, prs: REGISTRY.plan!.prs.slice(0, 1), tasks: [{ key: 'PROJ-9', title: 'Archive the pipeline', status: 'open' }] }
+  const registry = { ...REGISTRY, plan, lanes: REGISTRY.lanes.slice(0, 1), deploy: { [REGISTRY.plan!.prs[0]!.subTask]: { testing: 'done', acceptance: 'done', production: 'done' } } } as never
+  const l = lines(pane(EMPTY, uiTerminal, { ...VIEW, registry })).join('\n')
+  expect(l).toContain('PROJ-9 Archive the pipeline no pull request')
+  expect(l).not.toContain('Verify 0 of')
+  const doneReg = { ...(registry as object), plan: { ...plan, tasks: [{ key: 'PROJ-9', title: 'Archive the pipeline', status: 'Done' }] } } as never
+  expect(lines(pane(EMPTY, uiTerminal, { ...VIEW, registry: doneReg })).join('\n')).toContain('No done criteria yet')
+})
+
+test('a held pull request waits and says why, not amber', () => {
+  const plan = { ...REGISTRY.plan!, prs: REGISTRY.plan!.prs.map((r, i) => (i === 1 ? { ...r, hold: 'Wait for the platform team' } : r)) }
+  const l = lines(pane(EMPTY, uiTerminal, { ...VIEW, registry: { ...REGISTRY, plan } })).join('\n')
+  expect(l).toContain('held')
+})
+
+test('the root row carries a refresh control when the pane can refresh', () => {
+  let pressed = 0
+  const tree = pane(EMPTY, ui, VIEW, { refresh: () => { pressed += 1 } })
+  const found = JSON.stringify(tree).includes('Refresh')
+  expect(found).toBe(true)
+  expect(pressed).toBe(0)
+})
+
+test('an old call card stops asking once the registry moves past it', () => {
+  const asked = apply({ ...EMPTY, ticket: 'PROJ-1' }, { ticket: 'PROJ-1', lane: 'wt-1 · S1·1', kind: 'finding', state: 'stopped', needsYou: true, title: 'Conflicts', line: 'x' })
+  const node = tree(VIEW, asked).flatMap(sub => sub.prs).find(n => n.pr === 'S1·1')!
+  expect(node.state).toBe('merged')
+  expect(node.needsYou).toBe(false)
+})
+
+test('a criterion written as by "user" is the person\'s, like "you"', () => {
+  const plan = { ...REGISTRY.plan!, done: [{ criterion: 'The stacks are empty', by: 'user', source: 'AWS', how: 'look' }] } as never
+  const l = lines(pane(EMPTY, uiTerminal, { ...VIEW, registry: { ...REGISTRY, plan } })).join('\n')
+  expect(l).toContain('The stacks are empty you')
+  expect(l).not.toContain('forge · AWS')
+})

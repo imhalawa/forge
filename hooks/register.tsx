@@ -101,6 +101,8 @@ const inLane = (regs: Registries) =>
   !!regs.branch && Object.values(regs.files).some(f => f.registry.lanes.some(l => l.branch === regs.branch))
 
 let stopWatch: (() => void) | undefined
+// The pane's refresh control: read every state file and every PR again, now. Set once the session starts.
+let refreshNow: (() => Promise<void>) | undefined
 
 const isReport = (value: unknown): value is ForgeReport => {
   const r = value as Partial<ForgeReport> | null
@@ -110,6 +112,65 @@ const isReport = (value: unknown): value is ForgeReport => {
 
 const openPane = ($: { ui: { open: (p: { id: string; title: string }) => Promise<unknown> } }) =>
   $.ui.open({ id: PANE, title: 'Forge' })
+
+// Reads the state files and keeps them read: once when the session starts, and again whenever the pane is drawn or
+// opened with nothing watching (a plugin reload starts no session, so it would leave the pane on an old copy).
+let watching = false
+const watch = async ($: any, interactive = true) => {
+  if (watching) return
+  watching = true
+    // The host calls the registry reader needs, each spelled at its call site.
+  const io: Io = {
+    home: () => $.env.get('HOME'),
+    cwd: () => $.session.cwd(),
+    process: { run: argv => $.process.run(argv) },
+    fs: { list: path => $.fs.list(path), stat: path => $.fs.stat(path), read: path => $.fs.read(path) },
+    session: { repo: () => $.session.repo() },
+  }
+  const regs = await scan(io, { ...NO_REGISTRIES, ...await discover(io).catch(() => ({})) }).catch(() => NO_REGISTRIES)
+  await update($, registries, () => regs)
+  // A run in flight where this session works: show its tree, once, as the session opens.
+  if (interactive && relevant(regs).length > 0 && !inLane(regs)) await openPane($).catch(() => undefined)
+  // The registry moves without the conductor: a lane at review, a stop, a merge. Read it again on a timer.
+  if (regs.dirs?.length) {
+    stopWatch?.()
+    const timer = $.clock.every(POLL_MS, () => {
+      void (async () => {
+        const before = await read($, registries)
+        const after = await scan(io, before)
+        if (!changed(before, after)) return
+        await update($, registries, () => after)
+        if (!inLane(after)) {
+          // A toast cannot carry a button, so only the OS notification: it brings the person back to the chat.
+          for (const { key, text } of transitions(before, after)) {
+            await $.ui.notify(text, { title: `Forge · ${key}` }).catch(() => undefined)
+          }
+        }
+        $.ui.invalidate('ui.render')
+      })().catch(() => undefined)
+    })
+    // What GitHub says about each PR: checks, reviewers, size. Once now, then every minute.
+    const ask = async () => {
+      const fresh: Record<string, Signal> = { ...await read($, signals) }
+      for (const url of prUrls(await read($, registries))) {
+        const out = await $.process.run(['gh', 'pr', 'view', url, '--json', SIGNAL_FIELDS], { env: { PATH: TOOL_PATH } }).catch(() => null)
+        const s = out && out.exitCode === 0 ? parseSignal(out.stdout) : null
+        if (s) fresh[url] = s
+      }
+      await update($, signals, () => fresh)
+      $.ui.invalidate('ui.render')
+    }
+    refreshNow = async () => {
+      const again = await scan(io, { ...NO_REGISTRIES, ...await discover(io).catch(() => ({})) }).catch(() => null)
+      if (again) await update($, registries, () => again)
+      await ask().catch(() => undefined)
+      $.ui.invalidate('ui.render')
+    }
+    void ask().catch(() => undefined)
+    const asking = $.clock.every(SIGNAL_MS, () => { void ask().catch(() => undefined) })
+    stopWatch = () => { timer.cancel(); asking.cancel() }
+  }
+}
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
@@ -121,51 +182,7 @@ export const register: Register = on => {
       isDeferred: false,
     })
     await $.command.register({ name: COMMAND, description: 'Open the forge-lens pane' })
-    // The host calls the registry reader needs, each spelled at its call site.
-    const io: Io = {
-      home: () => $.env.get('HOME'),
-      cwd: () => $.session.cwd(),
-      process: { run: argv => $.process.run(argv) },
-      fs: { list: path => $.fs.list(path), stat: path => $.fs.stat(path), read: path => $.fs.read(path) },
-      session: { repo: () => $.session.repo() },
-    }
-    const regs = await scan(io, { ...NO_REGISTRIES, ...await discover(io).catch(() => ({})) }).catch(() => NO_REGISTRIES)
-    await update($, registries, () => regs)
-    // A run in flight where this session works: show its tree, once, as the session opens.
-    if (e.isInteractive !== false && relevant(regs).length > 0 && !inLane(regs)) await openPane($).catch(() => undefined)
-    // The registry moves without the conductor: a lane at review, a stop, a merge. Read it again on a timer.
-    if (regs.dirs?.length) {
-      stopWatch?.()
-      const timer = $.clock.every(POLL_MS, () => {
-        void (async () => {
-          const before = await read($, registries)
-          const after = await scan(io, before)
-          if (!changed(before, after)) return
-          await update($, registries, () => after)
-          if (!inLane(after)) {
-            // A toast cannot carry a button, so only the OS notification: it brings the person back to the chat.
-            for (const { key, text } of transitions(before, after)) {
-              await $.ui.notify(text, { title: `Forge · ${key}` }).catch(() => undefined)
-            }
-          }
-          $.ui.invalidate('ui.render')
-        })().catch(() => undefined)
-      })
-      // What GitHub says about each PR: checks, reviewers, size. Once now, then every minute.
-      const ask = async () => {
-        const fresh: Record<string, Signal> = { ...await read($, signals) }
-        for (const url of prUrls(await read($, registries))) {
-          const out = await $.process.run(['gh', 'pr', 'view', url, '--json', SIGNAL_FIELDS], { env: { PATH: TOOL_PATH } }).catch(() => null)
-          const s = out && out.exitCode === 0 ? parseSignal(out.stdout) : null
-          if (s) fresh[url] = s
-        }
-        await update($, signals, () => fresh)
-        $.ui.invalidate('ui.render')
-      }
-      void ask().catch(() => undefined)
-      const asking = $.clock.every(SIGNAL_MS, () => { void ask().catch(() => undefined) })
-      stopWatch = () => { timer.cancel(); asking.cancel() }
-    }
+    await watch($, e.isInteractive !== false)
     return next(e)
   })
 
@@ -186,6 +203,8 @@ export const register: Register = on => {
 
   // The person's own open: placed at any width.
   on('command.run', { command: COMMAND }, async $ => {
+    if (!watching) await watch($, false).catch(() => { watching = false })
+    else await refreshNow?.().catch(() => undefined)
     const opened = await openPane($)
     return { text: (opened as { isPlaced?: boolean }).isPlaced === false ? 'The forge pane waits for room.' : 'Forge pane opened.' }
   })
@@ -216,11 +235,13 @@ export const register: Register = on => {
   }).catch(() => ({ result: 'forge-lens could not store the report; carry on.', isError: true }))
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
+    if (!watching) void watch($, false).catch(() => { watching = false })
     const state = await read($, lens)
     return pane(state, { surface: e.surface, t: $.ui.resolve(e) }, viewOf(await read($, registries), state), {
       signals: await read($, signals),
       // The review action: the editor's URL through the system opener.
       open: (command: string[]) => $.process.run(command, { env: { PATH: TOOL_PATH } }).catch(() => undefined),
+      refresh: () => refreshNow?.(),
     })
   })
 

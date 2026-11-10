@@ -6,7 +6,7 @@ import tempfile
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
-from registry import fill, free_slots, merge, load, patch, registry_path, restack_order, save, set_plan, upsert
+from registry import fill, free_slots, merge, load, patch, patch_row, registry_path, restack_order, save, set_plan, upsert
 
 SCRIPT = os.path.join(os.path.dirname(__file__), "..", "scripts", "registry.py")
 
@@ -236,6 +236,29 @@ class RegistryTests(unittest.TestCase):
         self.assertEqual(reg["watchers"]["deploy"], {"kind": "session", "id": "local_1"})
         merge(reg, "watchers", {"deploy": None})
         self.assertIsNone(reg["watchers"]["deploy"])
+
+    def test_fill_sets_a_missing_pr_name_and_keeps_a_given_one(self):
+        reg = {"lanes": [], "plan": {"prs": [{"pr": "S1·1", "subTask": "PROJ-2"}, {"pr": "S1·2", "subTask": "PROJ-2", "name": "Kept"}]}}
+        self.assertEqual(fill(reg, {"names": {"S1·1": "Empty the stack", "S1·2": "Other"}}), ["name S1·1"])
+        self.assertEqual([r.get("name") for r in reg["plan"]["prs"]], ["Empty the stack", "Kept"])
+
+    def test_fill_keeps_sub_tasks_without_a_pr_and_their_status(self):
+        reg = {"lanes": [], "plan": {"prs": [{"pr": "S1·1", "subTask": "PROJ-2"}]}}
+        fill(reg, {"tasks": [{"key": "PROJ-2", "status": "open"}, {"key": "PROJ-3", "title": "Archive the pipeline", "status": "open"}]})
+        self.assertEqual(reg["plan"]["tasks"], [{"key": "PROJ-3", "title": "Archive the pipeline", "status": "open"}])
+        self.assertEqual(fill(reg, {"tasks": [{"key": "PROJ-3", "status": "done"}]}), ["status PROJ-3"])
+        self.assertEqual(reg["plan"]["tasks"][0]["status"], "done")
+
+    def test_row_holds_a_pr_and_orders_a_deploy_first(self):
+        reg = {"lanes": [], "plan": {"prs": [{"pr": "S1·1", "subTask": "P"}, {"pr": "S1·2", "subTask": "P"}]}}
+        patch_row(reg, "S1·2", {"hold": "Wait for the platform team", "mergeAfter": {"pr": "S1·1", "deployedTo": "production"}})
+        self.assertEqual(reg["plan"]["prs"][1]["mergeAfter"], {"pr": "S1·1", "deployedTo": "production"})
+        patch_row(reg, "S1·2", {"hold": None})
+        self.assertNotIn("hold", reg["plan"]["prs"][1])
+        with self.assertRaisesRegex(ValueError, "row takes only"):
+            patch_row(reg, "S1·2", {"criteria": []})
+        with self.assertRaisesRegex(ValueError, "mergeAfter is"):
+            patch_row(reg, "S1·2", {"mergeAfter": {"pr": "S9·9", "deployedTo": "production"}})
 
     def test_merge_takes_only_life_cycle_records(self):
         with self.assertRaisesRegex(ValueError, "merge takes one of"):

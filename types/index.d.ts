@@ -46,6 +46,8 @@ export type PlanRow = {
   slug?: string
   name?: string                 // what the PR does, in words: "Empty the IAM stack"
   repo?: string                 // the local clone's root, absolute
+  hold?: string                 // why it must not merge yet; forge never asks to merge a held PR
+  mergeAfter?: { pr: string; deployedTo: Environment } // merge only once that PR is deployed there
 }
 
 export type Lane = {
@@ -72,6 +74,7 @@ export type Registry = {
     parent?: { key: string; title?: string; type?: 'story' | 'bug' | 'task' }
     trackerUrl?: string         // "https://example.atlassian.net"
     done?: DoneCriterion[]      // what must hold in production, and how it is checked
+    tasks?: { key: string; title?: string; status?: string }[] // sub-tasks with no pull request, from the tracker
   }
   lanes: Lane[]
   deploy?: Record<string, Partial<Record<Environment, StepState>>>   // per sub-task

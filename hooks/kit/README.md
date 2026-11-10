@@ -5,4 +5,4 @@ for Claude Code mods. Forge's loader reads only files inside the plugin, and loa
 copied here with its `.ts` import extensions dropped. Change it in the devkit first, then copy it again.
 
 One local change: `SIZE.guide` is 400 (the devkit's is 48), because forge's rows wrap and a guide must reach past
-three lines. Each guide is also drawn only as wide as its line, so it never covers a row's links.
+three lines. Each guide is also drawn only as wide as its line, so it never covers a row's links. A `refresh` icon is added to `icons.ts` for the pane's refresh control.

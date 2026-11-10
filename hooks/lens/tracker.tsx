@@ -7,7 +7,7 @@ import { avatarSvg, glyph, type IconName, ROLES, type Role } from './design'
 import { ticketUrl } from './links'
 import { humanize } from './registry'
 import { CI_ROLE, type Signal, waitingOn } from './signals'
-import { type PrNode, tree, type View } from './tree'
+import { manualDone, type PrNode, tree, type View } from './tree'
 
 type State = NonNullable<ForgeReport['state']>
 
@@ -28,7 +28,8 @@ export type Node = {
   tone?: 'you' | 'dim'
   strong?: boolean
   right?: string
-  action?: { label: string; target: string[]; always: boolean }
+  // A row's one action: open its worktree (`target`), or run `press`; `icon` defaults to the editor's.
+  action?: { label: string; target?: string[]; press?: () => unknown; icon?: 'open-in-editor' | 'refresh'; always: boolean }
   signal?: Signal
   children: Node[]
 }
@@ -60,6 +61,16 @@ const prNode = (n: PrNode, view: View, only: boolean, editor: string, signals: R
   }
   // An open lane's worktree opens in the editor from a hover action; a merged one has no worktree left.
   const target = lane?.worktree && n.state !== 'merged' ? editorCommand(lane.worktree, editor) : null
+  // A held PR, or one that merges only after another is deployed, waits: forge does not ask to merge it.
+  const after = row?.mergeAfter && view.registry.plan?.prs.find(r => r.pr === row.mergeAfter!.pr)
+  const held = n.state !== 'merged' && (row?.hold || after)
+    ? (row?.hold ? 'held' : `after ${after?.name ?? row!.mergeAfter!.pr} is in ${row!.mergeAfter!.deployedTo}`) : undefined
+  if (held) {
+    return {
+      key: n.pr, icon: 'waiting', ref, title: name, tone: 'dim', right: held,
+      signal: n.url ? signals[n.url] : undefined, children: [],
+    }
+  }
   return {
     key: n.pr, icon: STATE_ICON[n.state], ref, title: name,
     tone: n.needsYou ? 'you' : WAITING.has(n.state) ? 'dim' : undefined,
@@ -76,15 +87,26 @@ const count = (n: number, of: number, what: string) => `${n} of ${of} ${what}`
 
 // The run as its five steps: Plan, Implement, Deploy, Verify, Clean up. Implement holds the sub-tasks and their PRs;
 // Deploy and Clean up count sub-tasks; Verify checks each done criterion.
-export const nodes = (state: LensState, view: View, editor = 'vscode', signals: Record<string, Signal> = {}): Node => {
+export const nodes = (state: LensState, view: View, editor = 'vscode', signals: Record<string, Signal> = {}, refresh?: () => unknown): Node => {
   const reg = view.registry
   const subs = tree(view, state)
   const prs = subs.flatMap(s => s.prs).filter(n => !n.dropped)
   const merged = prs.filter(n => n.state === 'merged').length
-  const planned = (reg.plan?.prs.length ?? 0) > 0
-  const implemented = prs.length > 0 && merged === prs.length
+  const planned = (reg.plan?.prs.length ?? 0) > 0 || subs.length > 0
+  // A sub-task with no pull request counts as much as one with: the run is not past a step while it is open.
+  const manual = subs.filter(s => s.manual)
+  const manualOpen = manual.filter(s => !manualDone(s)).length
+  const coded = subs.filter(s => !s.manual)
+  const implemented = (prs.length > 0 || manual.length > 0) && merged === prs.length && manualOpen === 0
 
   const tasks: Node[] = subs.map(s => {
+    if (s.manual) {
+      const finished = manualDone(s)
+      return {
+        key: s.key, icon: finished ? 'done' : 'pending', ref: { text: s.key, href: s.url }, title: s.title ?? '',
+        tone: finished ? undefined : 'dim', right: 'no pull request', children: [],
+      }
+    }
     const live = s.prs.filter(n => !n.dropped)
     const needs = live.some(n => n.needsYou)
     const done = live.length > 0 && live.every(n => n.state === 'merged')
@@ -96,7 +118,7 @@ export const nodes = (state: LensState, view: View, editor = 'vscode', signals: 
   })
 
   // Deploy: a sub-task is in an environment once every one of its PRs is deployed there.
-  const deployRows: Node[] = subs.map(s => {
+  const deployRows: Node[] = coded.map(s => {
     const envs = reg.deploy?.[s.key] ?? {}
     const prod = envs.production
     return {
@@ -105,20 +127,26 @@ export const nodes = (state: LensState, view: View, editor = 'vscode', signals: 
       right: ENVS.map(([env, short]) => `${short} ${STATE_MARK[envs[env] ?? 'pending']}`).join('  '), children: [],
     }
   })
-  const live = subs.filter(s => reg.deploy?.[s.key]?.production === 'done').length
-  const deployed = subs.length > 0 && live === subs.length
+  const live = coded.filter(s => reg.deploy?.[s.key]?.production === 'done').length
+  const deployed = coded.length > 0 && live === coded.length && manualOpen === 0
 
   // Verify: each done criterion from Plan, checked in production by forge or by the person.
   const criteria = reg.plan?.done ?? []
   const verifyRows: Node[] = criteria.map((c, i) => {
     const st = reg.verify?.[String(i)]
-    const yours = c.by === 'you' && deployed && st !== 'passed' && st !== 'failed'
+    // The person checks it: Plan writes `you`; `user` is read the same way.
+    const theirs = c.by === 'you' || c.by === 'user'
+    const yours = theirs && deployed && st !== 'passed' && st !== 'failed'
     return {
       key: `verify:${i}`, icon: yours ? 'you' : stepIcon(st), title: c.criterion,
       tone: yours ? 'you' : !st || st === 'pending' ? 'dim' : undefined,
-      right: c.by === 'you' ? 'you' : ['forge', c.source].filter(Boolean).join(' · '), children: [],
+      right: theirs ? 'you' : ['forge', c.source].filter(Boolean).join(' · '), children: [],
     }
   })
+  // No done criteria is not a pass: Plan must settle them before anything is verified.
+  if (criteria.length === 0 && deployed) {
+    verifyRows.push({ key: 'verify:none', icon: 'you', title: 'No done criteria yet: Plan settles them', tone: 'you', children: [] })
+  }
   const passed = criteria.filter((_, i) => reg.verify?.[String(i)] === 'passed').length
   const verified = criteria.length > 0 && passed === criteria.length
 
@@ -160,6 +188,7 @@ export const nodes = (state: LensState, view: View, editor = 'vscode', signals: 
   return {
     key: view.key, icon: type, ref: { text: view.key, href: ticketUrl(reg.plan?.trackerUrl, view.key) },
     title: state.title ?? reg.plan?.parent?.title ?? '', strong: true,
+    action: refresh ? { label: 'Refresh', press: refresh, icon: 'refresh', always: true } : undefined,
     children: [
       step('plan', 'plan', 'Plan', planned && !gapPlanning, !planned || gapPlanning, {
         children: [sub('plan:investigate', 'investigate', 'Investigate', planned), sub('plan:breakdown', 'breakdown', 'Break down', planned), ...gapRows],
@@ -168,7 +197,7 @@ export const nodes = (state: LensState, view: View, editor = 'vscode', signals: 
         right: planned && !implemented ? count(merged, prs.length, 'merged') : undefined, children: tasks,
       }),
       step('deploy', 'deploy', 'Deploy', deployed, implemented && !deployed || (live > 0 && !deployed), {
-        right: total > 0 && !deployed ? count(live, total, 'live') : undefined, children: deployRows,
+        right: coded.length > 0 && !deployed ? count(live, coded.length, 'live') : undefined, children: deployRows,
       }),
       step('verify', 'verify', 'Verify', verified, deployed && !verified, {
         right: criteria.length > 0 && !verified ? count(passed, criteria.length, 'hold') : undefined, children: verifyRows,
@@ -249,7 +278,9 @@ const line = (r: Flat, ui: Ui, open: (command: string[]) => unknown): RenderElem
       </Box>
       {n.right && <Text dimColor>{n.right}</Text>}
       {n.action && HoverReveal(kit, `action:${n.key}`, scope, n.action.always,
-        kit.control(`editor:${n.key}`, 'open-in-editor', n.action.always ? ROLES.you.hex : ROLES.muted.hex, n.action.label, () => open(n.action!.target)))}
+        kit.control(`${n.action.icon ?? 'editor'}:${n.key}`, n.action.icon ?? 'open-in-editor',
+          n.action.icon === 'refresh' ? ROLES.muted.hex : n.action.always ? ROLES.you.hex : ROLES.muted.hex, n.action.label,
+          () => (n.action!.press ? n.action!.press() : n.action!.target && open(n.action!.target))))}
     </Box>
   )
 }
@@ -283,10 +314,10 @@ export const building = (view: View, ui: Ui): RenderElement[] => {
 }
 
 export const tracker = (state: LensState, view: View, ui: Ui, opts: {
-  editor?: string; signals?: Record<string, Signal>; open?: (command: string[]) => unknown
+  editor?: string; signals?: Record<string, Signal>; open?: (command: string[]) => unknown; refresh?: () => unknown
 } = {}): RenderElement => {
   const { Box } = ui.t
-  const rows = withGuides(flatten(nodes(state, view, opts.editor, opts.signals)))
+  const rows = withGuides(flatten(nodes(state, view, opts.editor, opts.signals, opts.refresh)))
   return (
     <Box flexDirection="column" rowGap={0}>
       {rows.map(r => line(r, ui, opts.open ?? (() => undefined)))}

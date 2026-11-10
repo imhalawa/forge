@@ -141,8 +141,8 @@ test('review: the rules in full; nothing staged says so', () => {
   const l = lines(card(report('review'), terminal))
   expect(l).toContain('6 files ready to stage in orders-api.')
   for (const r of RULES) expect(l.some(x => x.includes(r))).toBe(true)
-  expect(lines(card(report('review', { ...FILLS.review, nothingStaged: true, worktree: 'PROJ-1-x' }), terminal)))
-    .toContain('Nothing is staged yet in PROJ-1-x.')
+  expect(lines(card(report('review', { ...FILLS.review, nothingStaged: true }), terminal)))
+    .toContain('Nothing is staged yet for the quantity rule in orders-api.')
 })
 
 test('commit: a tree from the PR to each staged file with its lines', () => {

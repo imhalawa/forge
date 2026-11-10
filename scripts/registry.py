@@ -130,11 +130,34 @@ def fill(registry: dict, facts: dict) -> list[str]:
             plan["trackerUrl"] = facts["trackerUrl"]
             filled.append("trackerUrl")
         titles = facts.get("titles") or {}
+        names = facts.get("names") or {}
         for row in plan.get("prs", []):
             title = titles.get(row.get("subTask"))
             if isinstance(title, str) and not row.get("title"):
                 row["title"] = title
                 filled.append(f"title {row.get('pr')}")
+            name = names.get(row.get("pr"))
+            if isinstance(name, str) and name.strip() and not row.get("name"):
+                row["name"] = name
+                filled.append(f"name {row.get('pr')}")
+        # Sub-tasks with no pull request (work done by hand or by another team): the tracker's list, kept in step.
+        # A task's status is the tracker's and always taken; its title only when missing.
+        for task in facts.get("tasks") or []:
+            if not (isinstance(task, dict) and isinstance(task.get("key"), str)):
+                continue
+            if any(r.get("subTask") == task["key"] for r in plan.get("prs", [])):
+                continue
+            tasks = plan.setdefault("tasks", [])
+            known = next((t for t in tasks if t.get("key") == task["key"]), None)
+            if known is None:
+                tasks.append({k: task[k] for k in ("key", "title", "status") if k in task})
+                filled.append(f"task {task['key']}")
+            else:
+                if isinstance(task.get("status"), str) and known.get("status") != task["status"]:
+                    known["status"] = task["status"]
+                    filled.append(f"status {task['key']}")
+                if isinstance(task.get("title"), str) and not known.get("title"):
+                    known["title"] = task["title"]
     for lane in registry["lanes"]:
         for field, value in (facts.get("lanes") or {}).get(lane.get("id"), {}).items():
             if field in ("prUrl", "repo", "prNumber") and value is not None and not lane.get(field):
@@ -144,6 +167,31 @@ def fill(registry: dict, facts: dict) -> list[str]:
 
 
 MERGEABLE = {"deploy", "verify", "cleanup", "gaps", "watchers"}
+
+# The plan row fields a run may change after planning: a hold, a deploy that must come first, and the names.
+ROW_FIELDS = {"name", "title", "hold", "mergeAfter"}
+
+
+def patch_row(registry: dict, pr: str, fields: dict) -> dict:
+    """Changes one plan row: `hold` ("<why>" or null), `mergeAfter` ({"pr": "<key>", "deployedTo": "<environment>"} or
+    null), `name` or `title`. Any other field is refused, so the plan's criteria and order only change through Plan."""
+    unknown = set(fields) - ROW_FIELDS
+    if unknown:
+        raise ValueError(f"row takes only {sorted(ROW_FIELDS)}, not {sorted(unknown)}")
+    rows = (registry.get("plan") or {}).get("prs", [])
+    row = next((r for r in rows if r.get("pr") == pr), None)
+    if row is None:
+        raise ValueError(f"no plan row {pr}")
+    after = fields.get("mergeAfter")
+    if after is not None and not (isinstance(after, dict) and any(r.get("pr") == after.get("pr") for r in rows)
+                                  and after.get("deployedTo") in ("testing", "acceptance", "production")):
+        raise ValueError("mergeAfter is {pr: <a plan row>, deployedTo: testing|acceptance|production}")
+    for key, value in fields.items():
+        if value is None:
+            row.pop(key, None)
+        else:
+            row[key] = value
+    return registry
 
 
 def merge(registry: dict, key: str, value: dict) -> dict:
@@ -186,10 +234,10 @@ def restack_order(registry: dict, merged_id: str) -> list[dict]:
 
 USAGE = (
     "usage: registry.py where <parent-key> | <path> slots | restack <id> | upsert [<json>] | patch <id> | set-plan | fill"
-    " | merge deploy|verify|cleanup|gaps\n"
-    "  upsert without <json>, patch, set-plan, fill and merge read the JSON from stdin"
+    " | merge deploy|verify|cleanup|gaps|watchers | row <pr>\n"
+    "  upsert without <json>, patch, row, set-plan, fill and merge read the JSON from stdin"
 )
-ARITY = {"slots": (2,), "restack": (3,), "upsert": (2, 3), "patch": (3,), "set-plan": (2,), "fill": (2,), "merge": (3,)}
+ARITY = {"slots": (2,), "restack": (3,), "upsert": (2, 3), "patch": (3,), "set-plan": (2,), "fill": (2,), "merge": (3,), "row": (3,)}
 
 
 def read_json(text: str) -> dict:
@@ -231,6 +279,8 @@ def main(argv: list[str]) -> int:
                     print(json.dumps(fill(registry, payload)))
                 elif command == "merge":
                     merge(registry, argv[2], payload)
+                elif command == "row":
+                    patch_row(registry, argv[2], payload)
                 else:
                     set_plan(registry, payload)
                 save(path, registry)

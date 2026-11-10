@@ -63,8 +63,10 @@ const upsertStage = (stages: ForgeReport[], r: ForgeReport): ForgeReport[] => {
 
 // Only the conductor (a report with no lane) switches the ticket; a lane's report counts only for the
 // ticket on view, so a lane of another run never draws into this one.
+// A PR's report belongs to the ticket on view. With none on view yet (a new session, a reload), the report itself
+// says which ticket this is, so nothing waits on a `started` report.
 export const accepts = (state: LensState, r: ForgeReport): boolean =>
-  !r.lane || (!!state.ticket && state.ticket === r.ticket)
+  !r.lane || !state.ticket || state.ticket === r.ticket
 
 export const apply = (prev: LensState, input: ForgeReport): LensState => {
   const r = clean(input)

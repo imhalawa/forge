@@ -226,7 +226,7 @@ const criteriaRows = (f: Fill): Row[] =>
 const BUILD: Record<TemplateName, (f: Fill) => Drawn> = {
   review: f => ({
     icon: 'you', title: `Review the ${f.name}`, needsYou: true, kind: 'review', state: 'review',
-    para: { text: f.nothingStaged ? `Nothing is staged yet in ${f.worktree ?? f.repo}.` : `${plural(f.files, 'file')} ready to stage in ${f.repo}.` },
+    para: { text: f.nothingStaged ? `Nothing is staged yet for the ${f.name} in ${f.repo}.` : `${plural(f.files, 'file')} ready to stage in ${f.repo}.` },
     sections: [{ label: 'Rules', rows: ruleRows(f.rules, 'r') }],
   }),
   commit: f => ({
