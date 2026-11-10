@@ -88,7 +88,8 @@ const prNode = (n: PrNode, view: View, only: boolean, editor: string, signals: R
     key: n.pr, icon: STATE_ICON[n.state], ref, title: name,
     tone: n.needsYou ? 'you' : WAITING.has(n.state) ? 'dim' : undefined,
     action: target ? { label: 'Open in the editor', target, always: false } : undefined,
-    signal: n.url ? signals[n.url] : undefined, children: [],
+    // A merged PR needs no checks, reviewers or size: it is done.
+    signal: n.url && n.state !== 'merged' ? signals[n.url] : undefined, children: [],
   }
 }
 
@@ -133,7 +134,9 @@ export const nodes = (state: LensState, view: View, editor = 'vscode', signals: 
     const done = live.length > 0 && live.every(n => n.state === 'merged')
     return {
       key: s.key, icon: needs ? 'you' : done ? 'done' : live.some(n => n.lane) ? 'progress' : 'pending',
-      ref: { text: s.key, href: s.url }, ...titled(s.title), tone: needs ? 'you' : undefined,
+      ref: { text: s.key, href: s.url }, tone: needs ? 'you' : undefined,
+      // A sub-task with no title yet (the tracker not read) reads as its first PR's name.
+      ...titled(s.title || (live[0] && (view.registry.plan?.prs.find(r => r.pr === live[0]!.pr)?.name ?? humanize(live[0].branch, view.key)))),
       children: live.map(n => prNode(n, view, live.length === 1, editor, signals)),
     }
   })
@@ -180,7 +183,7 @@ export const nodes = (state: LensState, view: View, editor = 'vscode', signals: 
     return {
       key: `verify:${i}`, icon: yours ? 'you' : stepIcon(st), title: c.criterion,
       tone: yours ? 'you' : !st || st === 'pending' ? 'dim' : undefined,
-      note: theirs ? 'Yours to check' : `Forge checks it${c.source ? ` in ${c.source}` : ''}`, children: [],
+      note: theirs ? undefined : `Forge checks it${c.source ? ` in ${c.source}` : ''}`, children: [],
     }
   })
   // No done criteria is not a pass: Plan must settle them before anything is verified.
@@ -190,6 +193,9 @@ export const nodes = (state: LensState, view: View, editor = 'vscode', signals: 
   const passed = criteria.filter((_, i) => reg.verify?.[String(i)] === 'passed').length
   const verified = criteria.length > 0 && passed === criteria.length
   const yoursOpen = verifyRows.filter(r => r.icon === 'you').length
+  const theirsAll = criteria.filter(c => c.by === 'you' || (c.by as string) === 'user').length
+  // Who checks: said once on the step, not under every criterion.
+  const checker = theirsAll === 0 ? undefined : theirsAll === criteria.length ? 'yours to check' : `${theirsAll} yours to check`
 
   // Clean up: a sub-task is clean once its worktrees, branches and sessions are gone and it is closed.
   const clean = (k: keyof CleanupState) => subs.filter(s => {
@@ -214,12 +220,14 @@ export const nodes = (state: LensState, view: View, editor = 'vscode', signals: 
   // A step: its state icon (amber when something in it needs the person), its name, and its count inline. It folds;
   // the step in progress, or one that needs the person, opens.
   const needsIn = (rows: Node[]): boolean => rows.some(r => r.tone === 'you' || needsIn(r.children))
+  const failedIn = (rows: Node[]): boolean => rows.some(r => r.icon === 'failed' || failedIn(r.children))
   const step = (key: string, title: string, done: boolean, current: boolean, more: Partial<Node> = {}): Node => {
     const children = more.children ?? []
     const needs = needsIn(children)
+    const failed = !done && failedIn(children)
     return {
-      key, icon: needs ? 'you' : done ? 'done' : current ? 'progress' : 'pending', title, strong: current || needs,
-      tone: !done && !current && !needs ? 'dim' : undefined, fold: { open: (current || needs) && children.length > 0 }, ...more, children,
+      key, icon: needs ? 'you' : failed ? 'failed' : done ? 'done' : current ? 'progress' : 'pending', title, strong: current || needs,
+      tone: !done && !current && !needs && !failed ? 'dim' : undefined, fold: { open: (current || needs || failed) && children.length > 0 }, ...more, children,
     }
   }
   const sub = (key: string, title: string, done: boolean): Node =>
@@ -243,13 +251,16 @@ export const nodes = (state: LensState, view: View, editor = 'vscode', signals: 
         children: [sub('plan:investigate', 'Investigate', planned), sub('plan:breakdown', 'Break down', planned), ...gapRows],
       }),
       step('implement', 'Implement', implemented, planned && !implemented, {
-        count: prs.length ? count(merged, prs.length, 'merged') : undefined, children: tasks,
+        count: [prs.length ? count(merged, prs.length, 'merged') : undefined, manualOpen ? `${plural(manualOpen, 'sub-task')} open` : undefined]
+          .filter(Boolean).join(' · ') || undefined, children: tasks,
       }),
       step('deploy', 'Deploy', deployed, (implemented && !deployed) || (live > 0 && !deployed), {
-        count: coded.length > 0 ? count(live, coded.length, 'live') : undefined, children: deployRows,
+        count: [coded.length > 0 ? count(live, coded.length, 'live') : undefined, live === coded.length && manualOpen ? `waits on ${plural(manualOpen, 'open sub-task')}` : undefined]
+          .filter(Boolean).join(' · ') || undefined, children: deployRows,
       }),
       step('verify', 'Verify', verified, deployed && !verified, {
-        count: yoursOpen > 0 ? `${yoursOpen} needs you` : criteria.length > 0 ? count(passed, criteria.length, 'hold') : undefined,
+        count: [yoursOpen > 0 ? `${yoursOpen} needs you` : criteria.length > 0 ? count(passed, criteria.length, 'hold') : undefined, checker]
+          .filter(Boolean).join(' · ') || undefined,
         children: verifyRows,
       }),
       step('cleanup', 'Clean up', cleaned, verified && !cleaned, { children: cleanRows }),
@@ -264,7 +275,7 @@ const gutter = (lasts: boolean[]): string =>
 // Each tree level is 3 cells deep; a row's guides sit at its open ancestors' cells.
 const LEVEL = 3
 
-type Flat = { n: Node; lasts: boolean[]; depth: number; guides: Guide[]; open: boolean }
+type Flat = { n: Node; lasts: boolean[]; depth: number; guides: Guide[]; open: boolean; gap?: boolean }
 
 // Whether a folding row is open: the person's toggle, else its default.
 const isOpen = (n: Node, folds: Record<string, boolean>): boolean => folds[n.key] ?? n.fold?.open ?? true
@@ -275,7 +286,8 @@ const flatten = (n: Node, folds: Record<string, boolean>, lasts: boolean[] = [],
   const open = isOpen(n, folds)
   const self: Flat = { n, lasts, depth: lasts.length * LEVEL, guides: [], open }
   if (!open) return [self]
-  if (root) return [self, ...n.children.flatMap(c => flatten(c, folds, [], false))]
+  // Each step after the first starts a group: a line's space above it.
+  if (root) return [self, ...n.children.flatMap((c, i) => flatten(c, folds, [], false).map((f, j) => (j === 0 && i > 0 ? { ...f, gap: true } : f)))]
   return [self, ...n.children.flatMap((c, i) => flatten(c, folds, [...lasts, i === n.children.length - 1], false))]
 }
 
@@ -332,7 +344,7 @@ const line = (r: Flat, ui: Ui, open: (command: string[]) => unknown, toggle: (ke
     kit.control(`toggle:${n.key}`, r.open ? 'chevron-down' : 'chevron-right', ROLES.muted.hex, r.open ? 'Fold' : 'Open', () => toggle(n.key, r.open)))
   return (
     <Box key={rowKey} flexDirection="row" alignItems="flex-start" columnGap={1} position="relative" overflow="hidden"
-      paddingLeft={desktop ? r.depth : 0} hover={desktop ? { scope, backgroundColor: kit.theme.hover } : undefined}>
+      marginTop={r.gap ? 1 : 0} paddingLeft={desktop ? r.depth : 0} hover={desktop ? { scope, backgroundColor: kit.theme.hover } : undefined}>
       {desktop ? kit.guides(n.key, r.guides) : r.lasts.length > 0 && <Text color="subtle" mono>{gutter(r.lasts)}</Text>}
       {chevron}
       {glyph(n.icon, ui.surface, ui.t, n.role)}

@@ -257,9 +257,9 @@ test('Deploy counts sub-tasks by environment; Verify checks each done criterion 
   expect(l).toContain('✓ Deploy · 2 of 2 live')
   expect(l).toContain('└─ ✓ 2 sub-tasks live in production')
   expect(l).toContain('  ├─ ✓ PROJ-2 Remove config T✓ A✓ P✓')
-  expect(l).toContain('! Verify · 1 needs you')
+  expect(l).toContain('! Verify · 1 needs you · 1 yours to check')
   expect(l).toContain('├─ ✓ No service calls the scope Forge checks it in Datadog')
-  expect(l).toContain('└─ ! The settings page still loads Yours to check')
+  expect(l).toContain('└─ ! The settings page still loads')
 })
 
 test('a PR without a name reads its branch in words', () =>
@@ -474,7 +474,7 @@ test('an old call card stops asking once the registry moves past it', () => {
 test('a criterion written as by "user" is the person\'s, like "you"', () => {
   const plan = { ...REGISTRY.plan!, done: [{ criterion: 'The stacks are empty', by: 'user', source: 'AWS', how: 'look' }] } as never
   const l = lines(pane(EMPTY, uiTerminal, { ...VIEW, registry: { ...REGISTRY, plan } }, { folds: { verify: true } } as never)).join('\n')
-  expect(l).toContain('The stacks are empty Yours to check')
+  expect(l).toContain('yours to check')
   expect(l).not.toContain('Forge checks it in AWS')
 })
 
@@ -499,4 +499,20 @@ test('a step opens and folds on the person\'s toggle', () => {
   expect(closed).not.toContain('├─ ◐ PROJ-2 Remove config')
   const opened = lines(pane(EMPTY, uiTerminal, VIEW, { folds: { plan: true } } as never))
   expect(opened).toContain('├─ ✓ Investigate')
+})
+
+test('steps are spaced apart, and a step with a failure inside opens', () => {
+  const plan = { ...REGISTRY.plan!, done: [{ criterion: 'The stacks are empty', by: 'forge', source: 'AWS', how: 'look' }] } as never
+  const registry = { ...REGISTRY, plan, verify: { 0: 'failed' } } as never
+  const tree = pane(EMPTY, ui, { ...VIEW, registry })
+  expect(find(tree, n => n.type === 'Box' && n.props.marginTop === 1 && String(n.props.key).startsWith('row:')).map(n => n.props.key))
+    .toEqual(['row:implement', 'row:deploy', 'row:verify', 'row:cleanup'])
+  expect(lines(pane(EMPTY, uiTerminal, { ...VIEW, registry })).join('\n')).toContain('└─ ✗ The stacks are empty')
+})
+
+test('a merged pull request shows no checks, reviewers or size', () => {
+  const url = 'https://github.com/o/r/pull/41'
+  const registry = { ...REGISTRY, lanes: REGISTRY.lanes.map(l => (l.id === 'wt-1' ? { ...l, prUrl: url } : l)) }
+  const signals = { [url]: { ci: 'passing', review: 'APPROVED', reviewers: [], conflicts: false, draft: false, state: 'MERGED', additions: 1, deletions: 2, files: 3 } }
+  expect(lines(pane(EMPTY, uiTerminal, { ...VIEW, registry }, { signals: signals as never })).join('\n')).not.toContain('3 files')
 })
