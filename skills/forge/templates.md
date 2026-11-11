@@ -173,11 +173,11 @@ Sent once every done criterion holds; forge asks before removing anything.
 |---|---|
 | Icon | needs you (amber) |
 | Title | Clean up {ticket} |
-| Paragraph | Every done criterion holds in production. Forge removes what it made for this ticket and closes it. |
+| Paragraph | Every done criterion holds in production. Forge removes what it made for this ticket and leaves it done in the tracker. |
 | Section | **Removes**: a tree by repo; under each, each worktree in mono with "Worktree, its branch here and on GitHub" (or what applies); then "{n} building sessions, archived" |
 | Section | **Keeps** (only when something is kept): a tree by repo; under each, the worktree with an amber icon and why ("2 changed files not committed. Forge never removes work that isn't pushed.") |
-| Section | **Closes**: the sub-tasks, then the ticket |
-| Question | Remove these and close {ticket}? · Clean up · Keep them |
+| Section | **Marks done**: the sub-tasks, then the ticket, each one not yet in the done status; never Closed |
+| Question | Remove these and mark {ticket} done? · Clean up · Keep them |
 
 ## done (agreed 2026-11-10)
 

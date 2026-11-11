@@ -197,7 +197,7 @@ export const nodes = (state: LensState, view: View, editor = 'vscode', signals: 
   // Who checks: said once on the step, not under every criterion.
   const checker = theirsAll === 0 ? undefined : theirsAll === criteria.length ? 'yours to check' : `${theirsAll} yours to check`
 
-  // Clean up: a sub-task is clean once its worktrees, branches and sessions are gone and it is closed.
+  // Clean up: a sub-task is clean once its worktrees, branches and sessions are gone and it is done in the tracker.
   const clean = (k: keyof CleanupState) => subs.filter(s => {
     const c = reg.cleanup?.[s.key]
     return typeof c === 'object' && c[k] === true
@@ -213,7 +213,7 @@ export const nodes = (state: LensState, view: View, editor = 'vscode', signals: 
     cleanStage('cleanup:branches', 'Local and remote branches deleted', clean('branches')),
     { key: 'cleanup:prune', icon: pruned ? 'done' : 'pending', title: 'Stale refs pruned', tone: pruned ? undefined : 'dim', children: [] },
     cleanStage('cleanup:sessions', 'Sessions archived', clean('sessions')),
-    cleanStage('cleanup:closed', 'Sub-tasks closed', clean('closed')),
+    cleanStage('cleanup:closed', 'Sub-tasks done', clean('closed')),
   ]
   const cleaned = total > 0 && clean('worktrees') === total && clean('branches') === total && clean('closed') === total
 

@@ -14,7 +14,7 @@ Each time you run it, forge works out where the ticket stands, does the next thi
 | 2. Implement | Builds each pull request in its own worktree, test first, one rule at a time, and leaves the change unstaged. Commits only what you staged, opens the pull request, follows its checks and reviews, and fixes what is its own fault. | Review and stage each change in your editor. Approve opening and merging. |
 | 3. Deploy | Follows each sub-task through testing, acceptance and production as soon as its pull requests merge, checking the pipeline every 3 minutes. Never approves, starts or re-runs a deploy. | Nothing, unless a deploy fails. |
 | 4. Verify | Checks each done criterion in production when a source can prove it, such as a Datadog query. | Check the criteria nothing can prove, with the steps Plan wrote down. |
-| 5. Clean up | Removes the worktrees, branches and sessions it made, and closes the sub-tasks and the ticket. Keeps anything not committed and pushed. | Say yes. |
+| 5. Clean up | Removes the worktrees, branches and sessions it made, and leaves the sub-tasks and the ticket in the tracker's done status (Resolved or Done, never Closed). Keeps anything not committed and pushed. | Say yes. |
 
 A missing piece found later goes back to Plan: forge works out the gap, fits it in, and adds sub-tasks and pull requests for it.
 

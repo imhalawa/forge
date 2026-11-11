@@ -237,6 +237,12 @@ class RegistryTests(unittest.TestCase):
         merge(reg, "watchers", {"deploy": None})
         self.assertIsNone(reg["watchers"]["deploy"])
 
+    def test_fill_picks_the_done_status_once(self):
+        reg = {"lanes": [], "plan": {"prs": []}}
+        self.assertEqual(fill(reg, {"doneStatus": "Resolved"}), ["doneStatus"])
+        self.assertEqual(fill(reg, {"doneStatus": "Closed"}), [])
+        self.assertEqual(reg["plan"]["doneStatus"], "Resolved")
+
     def test_fill_sets_a_missing_pr_name_and_keeps_a_given_one(self):
         reg = {"lanes": [], "plan": {"prs": [{"pr": "S1·1", "subTask": "PROJ-2"}, {"pr": "S1·2", "subTask": "PROJ-2", "name": "Kept"}]}}
         self.assertEqual(fill(reg, {"names": {"S1·1": "Empty the stack", "S1·2": "Other"}}), ["name S1·1"])

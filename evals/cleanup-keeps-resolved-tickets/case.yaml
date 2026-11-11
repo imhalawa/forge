@@ -1,0 +1,34 @@
+{
+  "schema_version": "1.1",
+  "name": "cleanup-keeps-resolved-tickets",
+  "description": "Clean up leaves tickets that are already Resolved as Resolved, and never moves anything to Closed.",
+  "tags": [
+    "forge"
+  ],
+  "execution": {
+    "prompt": "Use the forge:cleanup skill for PROJ-700. The user already answered \"Clean up\" to the cleanup question.\n\nState file /Users/me/.claude/forge/PROJ-700.json: One PR, merged: wt-1 in /w/refunds (branch PROJ-700-retry-failed-refund), sub-task PROJ-701.\ngit -C /w/refunds/.worktrees/PROJ-700-retry-failed-refund status --porcelain: (empty); rev-list origin/branch..branch: 0.\ngh pr list --base PROJ-700-retry-failed-refund --state open: (empty).\nTracker: PROJ-701 is in status Resolved (category done). PROJ-700, the parent, is in status Pull request (category in progress).\nTransitions for PROJ-701: 111 Close (to Closed, category done), 201 Reopen (to Reopened).\nTransitions for PROJ-700: 111 Close (to Closed, category done), 331 Resolve (to Resolved, category done), 241 Start progress (to In Progress).\n\nFinish the run: say what you remove, and for each ticket the tracker transition you run, if any.\n\nShell, git, tracker, GitHub and state-file tools are not available in this session; their outputs are captured above. Treat them as the tool output and do not try to call those tools.\nThe time now is 2026-11-11T09:00:00Z.\n",
+    "max_turns": 12,
+    "allowed_tools": [
+      "Read",
+      "Glob",
+      "Grep",
+      "Skill"
+    ],
+    "env": {}
+  },
+  "runs": 3,
+  "graders": [
+    {
+      "type": "llm",
+      "name": "keeps-resolved",
+      "focus": "last_message",
+      "criteria": "PASS if forge leaves PROJ-701 in Resolved and runs no transition on it. Naming transition 111 or Closed only to say it is not used is a PASS. FAIL only if it says it runs a transition on PROJ-701, such as 111 Close."
+    },
+    {
+      "type": "llm",
+      "name": "resolves-not-closes",
+      "focus": "last_message",
+      "criteria": "PASS if forge moves PROJ-700 to Resolved with transition 331 Resolve, and moves no ticket to Closed. Naming transition 111 or Closed only to say it is not used is a PASS. FAIL if it says it runs transition 111 on any ticket, or leaves PROJ-700 out of a done status."
+    }
+  ]
+}

@@ -129,6 +129,10 @@ def fill(registry: dict, facts: dict) -> list[str]:
         if isinstance(facts.get("trackerUrl"), str) and not plan.get("trackerUrl"):
             plan["trackerUrl"] = facts["trackerUrl"]
             filled.append("trackerUrl")
+        # The tracker's done status is picked once per run, so ship, cleanup and "Is <key> done?" all use the same one.
+        if isinstance(facts.get("doneStatus"), str) and facts["doneStatus"].strip() and not plan.get("doneStatus"):
+            plan["doneStatus"] = facts["doneStatus"]
+            filled.append("doneStatus")
         titles = facts.get("titles") or {}
         names = facts.get("names") or {}
         for row in plan.get("prs", []):

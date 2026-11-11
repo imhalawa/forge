@@ -376,7 +376,7 @@ const BUILD: Record<TemplateName, (f: Fill) => Drawn> = {
     const keeps = (f.keeps ?? []) as Fill[]
     return {
       icon: 'you', title: `Clean up ${f.ticket}`, needsYou: true, kind: 'finding', state: 'call',
-      para: { text: 'Every done criterion holds in production. Forge removes what it made for this ticket and closes it.' },
+      para: { text: 'Every done criterion holds in production. Forge removes what it made for this ticket and leaves it done in the tracker.' },
       sections: [
         { label: 'Removes', rows: [
           ...(f.removes as Fill[]).map((r, i) => ({ key: `r${i}`, icon: 'folder' as IconName, text: r.repo, mono: true,
@@ -385,7 +385,7 @@ const BUILD: Record<TemplateName, (f: Fill) => Drawn> = {
         ] },
         ...(keeps.length ? [{ label: 'Keeps', rows: keeps.map((r, i) => ({ key: `k${i}`, icon: 'folder' as IconName, text: r.repo, mono: true,
           children: (r.worktrees as Fill[]).map((w, j) => ({ key: `w${j}`, icon: 'worktree' as IconName, role: 'you' as Role, text: w.name, mono: true, sub: sentence(w.why) })) })) }] : []),
-        { label: 'Closes', rows: [{ key: 'closes', icon: 'ticket', text: and(f.closes) }] },
+        { label: 'Marks done', rows: [{ key: 'closes', icon: 'ticket', text: and(f.closes) }] },
       ],
     }
   },
